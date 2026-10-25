@@ -184,13 +184,13 @@ KeyEventResult playerControlStep(
   if (key == LogicalKeyboardKey.arrowUp) {
     request(progress.hasFocus || back.hasFocus ? back : progress);
   } else if (key == LogicalKeyboardKey.arrowDown) {
-    request(
-      back.hasFocus
-          ? progress
-          : progress.hasFocus
-          ? play
-          : video,
-    );
+    if (back.hasFocus) {
+      request(progress);
+    } else if (progress.hasFocus) {
+      request(play);
+    } else if (!bottom.any((n) => n.hasFocus)) {
+      request(video);
+    }
   } else if (key == LogicalKeyboardKey.arrowLeft ||
       key == LogicalKeyboardKey.arrowRight) {
     final from = bottom.indexWhere((n) => n.hasFocus);

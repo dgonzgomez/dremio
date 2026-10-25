@@ -55,7 +55,7 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
     subtitlesFocus,
     sourcesFocus,
     muteFocus,
-    volumeFocus,
+    if (desktop) volumeFocus,
     if (desktop) fullscreenFocus,
   ];
 
@@ -282,11 +282,15 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
     if (!mounted) return;
     if (!hud) setState(() => hud = true);
     hideTimer?.cancel();
-    hideTimer = Timer(const Duration(seconds: 3), () {
-      if (mounted && ready && playing && !inControls) {
-        setState(() => hud = false);
-      }
+    hideTimer = Timer(const Duration(seconds: 10), () {
+      if (mounted && ready) _hideHud();
     });
+  }
+
+  void _hideHud() {
+    hideTimer?.cancel();
+    if (inControls) focus.requestFocus();
+    setState(() => hud = false);
   }
 
   void _toggle() {
@@ -548,13 +552,18 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
 
   @override
   Widget build(BuildContext context) {
-    final showHud = ready && (hud || !playing);
+    final showHud = ready && hud;
     return PopScope(
-      canPop: !inControls,
+      // On the remote, Back first dismisses the overlay; Escape on desktop keeps its old behavior.
+      canPop: desktop ? !inControls : !showHud,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
-        focus.requestFocus();
-        _poke();
+        if (desktop) {
+          focus.requestFocus();
+          _poke();
+        } else {
+          _hideHud();
+        }
       },
       child: Scaffold(
         backgroundColor: Colors.black,
@@ -816,27 +825,29 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
                           height: 44,
                           onTap: _mute,
                         ),
-                        SizedBox(
-                          width: 130,
-                          child: RemoteVolumeKeys(
-                            focusNode: volumeFocus,
-                            onActivate: _mute,
-                            value: volume,
-                            onChanged: (v) {
-                              _setVolume(v);
-                              _poke();
-                            },
-                            child: Slider(
+                        // TV remotes have their own volume buttons, so the slider is desktop-only.
+                        if (desktop)
+                          SizedBox(
+                            width: 130,
+                            child: RemoteVolumeKeys(
+                              focusNode: volumeFocus,
+                              onActivate: _mute,
                               value: volume,
-                              max: 100,
                               onChanged: (v) {
                                 _setVolume(v);
-                                hideTimer?.cancel();
+                                _poke();
                               },
-                              onChangeEnd: (_) => _poke(),
+                              child: Slider(
+                                value: volume,
+                                max: 100,
+                                onChanged: (v) {
+                                  _setVolume(v);
+                                  hideTimer?.cancel();
+                                },
+                                onChangeEnd: (_) => _poke(),
+                              ),
                             ),
                           ),
-                        ),
                         if (desktop) const SizedBox(width: 12),
                         if (desktop)
                           Pill(

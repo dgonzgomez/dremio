@@ -99,6 +99,9 @@ Builds need several GB of temporary space (Gradle and Xcode caches). If a build 
 ### 0.5.2
 
 - Alt+Enter toggles full screen anywhere on Mac and Windows, without also pressing the selected button.
+- Fire TV player: Back hides the controls when they're showing and only leaves the video when they're hidden.
+- Player controls hide after 10 seconds without input, even when paused.
+- Fire TV player: Down on the bottom row of controls stays there, and the volume slider is hidden (the remote has its own volume buttons).
 
 ### 0.5.1
 

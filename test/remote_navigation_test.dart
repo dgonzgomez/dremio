@@ -219,6 +219,12 @@ void main() {
       expect(progress.hasPrimaryFocus, isTrue);
       await press(tester, LogicalKeyboardKey.arrowDown);
       expect(play.hasPrimaryFocus, isTrue);
+      await press(tester, LogicalKeyboardKey.arrowDown);
+      expect(
+        play.hasPrimaryFocus,
+        isTrue,
+        reason: 'Down on the bottom row stays there',
+      );
       await press(tester, LogicalKeyboardKey.arrowRight);
       expect(mute.hasPrimaryFocus, isTrue);
       await press(tester, LogicalKeyboardKey.arrowRight);
