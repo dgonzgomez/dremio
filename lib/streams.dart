@@ -97,6 +97,29 @@ List<StreamChoice> selectStreams(dynamic streams, String preferred) {
   return choices.take(8).toList();
 }
 
+class OnlineSubtitle {
+  const OnlineSubtitle(this.url, this.language, this.name);
+  final String url, language, name;
+}
+
+const _subtitleLanguages = {'eng': ('English', 3), 'spa': ('Spanish', 2)};
+
+/// Subtitles for the title from OpenSubtitles (via Stremio's public add-on), for sources that ship without them.
+Future<List<OnlineSubtitle>> onlineSubtitles(String type, String video) async {
+  final response = await getJson('https://opensubtitles-v3.strem.io/subtitles/${Uri.encodeComponent(type)}/${Uri.encodeComponent(video)}.json');
+  final taken = <String, int>{};
+  final found = <OnlineSubtitle>[];
+  for (final s in response is Map && response['subtitles'] is List ? response['subtitles'] as List : const []) {
+    if (s is! Map) continue;
+    final language = '${s['lang'] ?? ''}', wanted = _subtitleLanguages[language];
+    final uri = Uri.tryParse('${s['url'] ?? ''}');
+    if (wanted == null || uri == null || uri.scheme != 'https') continue;
+    final n = taken[language] = (taken[language] ?? 0) + 1;
+    if (n <= wanted.$2) found.add(OnlineSubtitle(uri.toString(), language, '${wanted.$1} · online $n'));
+  }
+  return found;
+}
+
 /// Confirms the link serves video before handing it to the player.
 Future<String> preflight(StreamChoice choice) async {
   final client = HttpClient()..connectionTimeout = const Duration(seconds: 9);

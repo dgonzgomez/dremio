@@ -21,7 +21,7 @@ class Store {
   }
 
   int now() => DateTime.now().millisecondsSinceEpoch;
-  int getInt(String key) => _prefs.getInt(key) ?? 0;
+  int getInt(String key, [int fallback = 0]) => _prefs.getInt(key) ?? fallback;
   void setInt(String key, int value) => _prefs.setInt(key, value);
   String getString(String key, [String fallback = '']) => _prefs.getString(key) ?? fallback;
   void setString(String key, String value) => _prefs.setString(key, value);

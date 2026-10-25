@@ -110,7 +110,8 @@ class _DremioAppState extends State<DremioApp> {
   @override
   void initState() {
     super.initState();
-    HardwareKeyboard.instance.addHandler(_onKey);  }
+    HardwareKeyboard.instance.addHandler(_onKey);
+  }
 
   @override
   void dispose() {

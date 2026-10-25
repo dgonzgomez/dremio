@@ -130,7 +130,7 @@ class _DetailPageState extends State<DetailPage> {
           if (series) ..._episodes(context),
           if (Catalog.instance.similar(meta) case final more when more.isNotEmpty) ...[
             SizedBox(height: series ? 44 : 12),
-            Shelf(title: 'More Like This', items: more, filter: false, onOpen: (m) => openDetail(context, m)),
+            Shelf(title: 'More Like This', items: more, filter: false, wheel: true, onOpen: (m) => openDetail(context, m)),
           ],
           const SizedBox(height: 60),
         ],

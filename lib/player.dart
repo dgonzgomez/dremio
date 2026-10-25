@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
@@ -21,7 +22,16 @@ class PlayerPage extends StatefulWidget {
   State<PlayerPage> createState() => _PlayerPageState();
 }
 
-class _PlayerPageState extends State<PlayerPage> {
+/// Re-maximizes once the window has actually left full screen; on macOS that's after the exit animation.
+class _MaximizeAfterFullScreen with WindowListener {
+  @override
+  void onWindowLeaveFullScreen() {
+    windowManager.removeListener(this);
+    windowManager.maximize();
+  }
+}
+
+class _PlayerPageState extends State<PlayerPage> with WindowListener {
   late final player = Player(
     configuration: const PlayerConfiguration(title: 'Dremio', bufferSize: 96 * 1024 * 1024),
   );
@@ -31,11 +41,12 @@ class _PlayerPageState extends State<PlayerPage> {
   final subs = <StreamSubscription>[];
   List<StreamChoice> choices = [];
   int index = 0, attempt = 0, resumeMs = 0, lastSaved = 0;
-  bool ready = false, hadPlayed = false, hasFrames = false, closed = false, hud = true, fullscreen = false, seekedToResume = false;
+  bool ready = false, hadPlayed = false, hasFrames = false, closed = false, hud = true, fullscreen = false, seekedToResume = false, maximizedBefore = false;
   String? error;
   Timer? hideTimer, stallTimer;
   Duration position = Duration.zero, duration = Duration.zero;
   bool playing = false;
+  double volume = 100, unmuted = 100;
   String get type => str(widget.meta, 'type');
   String get title => str(widget.meta, 'name');
 
@@ -43,6 +54,15 @@ class _PlayerPageState extends State<PlayerPage> {
   void initState() {
     super.initState();
     resumeMs = store.getInt('position:${widget.video}');
+    volume = store.getInt('volume', 100).clamp(0, 100).toDouble();
+    if (volume > 0) unmuted = volume;
+    player.setVolume(volume);
+    if (desktop) {
+      windowManager.addListener(this);
+      windowManager.isFullScreen().then((f) {
+        if (mounted) setState(() => fullscreen = f);
+      });
+    }
     focus.addListener(() {
       if (mounted) setState(() {});
     });
@@ -167,6 +187,20 @@ class _PlayerPageState extends State<PlayerPage> {
     if (duration.inMilliseconds > 0) _resume();
     setState(() {});
     _poke();
+    _addOnlineSubtitles(attempt);
+  }
+
+  /// Fills in subtitles when the source has no English track (common with 4K remuxes); they're listed, not switched on.
+  Future<void> _addOnlineSubtitles(int current) async {
+    final native = player.platform;
+    if (native is! NativePlayer) return;
+    if (player.state.tracks.subtitle.any((t) => t.id != 'auto' && t.id != 'no' && (t.language ?? '').toLowerCase().startsWith('en'))) return;
+    try {
+      for (final s in await onlineSubtitles(type, widget.video)) {
+        if (closed || current != attempt) return;
+        await native.command(['sub-add', s.url, 'auto', s.name, s.language]);
+      }
+    } catch (_) {}
   }
 
   void _resume() {
@@ -216,10 +250,43 @@ class _PlayerPageState extends State<PlayerPage> {
     _poke();
   }
 
+  /// A maximized window only half-enters full screen (the title bar stays), so leave maximized first and restore it afterwards.
   Future<void> _setFullscreen(bool value) async {
     if (!desktop) return;
+    if (value == await windowManager.isFullScreen()) {
+      if (mounted) setState(() => fullscreen = value);
+      return;
+    }
+    if (value) {
+      maximizedBefore = await windowManager.isMaximized();
+      if (maximizedBefore) await windowManager.unmaximize();
+    }
+    if (!value) _restoreMaximized();
     await windowManager.setFullScreen(value);
     if (mounted) setState(() => fullscreen = value);
+  }
+
+  void _restoreMaximized() {
+    if (!maximizedBefore) return;
+    maximizedBefore = false;
+    windowManager.addListener(_MaximizeAfterFullScreen());
+  }
+
+  @override
+  void onWindowEnterFullScreen() {
+    if (mounted) setState(() => fullscreen = true);
+  }
+
+  @override
+  void onWindowLeaveFullScreen() {
+    if (mounted) setState(() => fullscreen = false);
+  }
+
+  /// Wheel or two-finger scroll over the video changes the volume; up is louder.
+  void _scrollVolume(double dy) {
+    if (!ready || dy == 0) return;
+    _setVolume(volume - (dy / 4).clamp(-8, 8));
+    _poke();
   }
 
   void _exit() {
@@ -284,6 +351,16 @@ class _PlayerPageState extends State<PlayerPage> {
     });
   }
 
+  void _setVolume(double v) {
+    v = v.clamp(0, 100).roundToDouble();
+    if (v > 0) unmuted = v;
+    player.setVolume(v);
+    store.setInt('volume', v.round());
+    setState(() => volume = v);
+  }
+
+  void _mute() => _setVolume(volume > 0 ? 0 : unmuted);
+
   bool get inControls => ready && focus.hasFocus && !focus.hasPrimaryFocus;
 
   KeyEventResult _key(FocusNode node, KeyEvent e) {
@@ -318,15 +395,15 @@ class _PlayerPageState extends State<PlayerPage> {
     } else if (k == LogicalKeyboardKey.mediaRewind) {
       _seek(-30);
     } else if (k == LogicalKeyboardKey.arrowUp) {
-      player.setVolume((player.state.volume + 10).clamp(0, 100));
+      _setVolume(volume + 10);
       _poke();
     } else if (k == LogicalKeyboardKey.arrowDown) {
-      player.setVolume((player.state.volume - 10).clamp(0, 100));
+      _setVolume(volume - 10);
       _poke();
     } else if (k == LogicalKeyboardKey.keyF) {
       _setFullscreen(!fullscreen);
     } else if (k == LogicalKeyboardKey.keyM) {
-      player.setVolume(player.state.volume > 0 ? 0 : 100);
+      _mute();
       _poke();
     } else if (k == LogicalKeyboardKey.escape) {
       fullscreen ? _setFullscreen(false) : _exit();
@@ -346,7 +423,11 @@ class _PlayerPageState extends State<PlayerPage> {
     for (final s in subs) {
       s.cancel();
     }
-    if (fullscreen) windowManager.setFullScreen(false);
+    if (desktop) windowManager.removeListener(this);
+    if (fullscreen) {
+      _restoreMaximized();
+      windowManager.setFullScreen(false);
+    }
     player.dispose();
     focus.dispose();
     controls.dispose();
@@ -377,21 +458,27 @@ class _PlayerPageState extends State<PlayerPage> {
           child: MouseRegion(
             cursor: showHud ? SystemMouseCursors.basic : SystemMouseCursors.none,
             onHover: (_) => _poke(),
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: _toggle,
-              onDoubleTap: () => _setFullscreen(!fullscreen),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Video(controller: controller, controls: NoVideoControls, fill: Colors.black),
-                  if (!ready) _loading(),
-                  AnimatedOpacity(
-                    opacity: showHud ? 1 : 0,
-                    duration: const Duration(milliseconds: 220),
-                    child: IgnorePointer(ignoring: !showHud, child: _hud()),
-                  ),
-                ],
+            child: Listener(
+              onPointerSignal: (e) {
+                if (e is PointerScrollEvent) _scrollVolume(e.scrollDelta.dy);
+              },
+              onPointerPanZoomUpdate: (e) => _scrollVolume(-e.localPanDelta.dy),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _toggle,
+                onDoubleTap: () => _setFullscreen(!fullscreen),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Video(controller: controller, controls: NoVideoControls, fill: Colors.black),
+                    if (!ready) _loading(),
+                    AnimatedOpacity(
+                      opacity: showHud ? 1 : 0,
+                      duration: const Duration(milliseconds: 220),
+                      child: IgnorePointer(ignoring: !showHud, child: _hud()),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -486,12 +573,38 @@ class _PlayerPageState extends State<PlayerPage> {
                         const SizedBox(width: 12),
                         Pill(icon: Icons.forward_10_rounded, tooltip: 'Forward 10 seconds  (→)', height: 44, onTap: () => _seek(10)),
                         const SizedBox(width: 12),
-                        Pill(icon: Icons.volume_up_rounded, tooltip: 'Audio', height: 44, onTap: _audio),
+                        Pill(icon: Icons.record_voice_over_rounded, tooltip: 'Audio track', height: 44, onTap: _audio),
                         const SizedBox(width: 12),
                         Pill(icon: Icons.subtitles_outlined, tooltip: 'Subtitles', height: 44, onTap: _subtitles),
                         const SizedBox(width: 12),
                         Pill(icon: Icons.layers_outlined, tooltip: 'Sources', height: 44, onTap: _sources),
                         const Spacer(),
+                        Pill(
+                          icon: volume == 0
+                              ? Icons.volume_off_rounded
+                              : volume < 50
+                              ? Icons.volume_down_rounded
+                              : Icons.volume_up_rounded,
+                          tooltip: volume == 0 ? 'Unmute  (M)' : 'Mute  (M)',
+                          height: 44,
+                          onTap: _mute,
+                        ),
+                        SizedBox(
+                          width: 130,
+                          child: ExcludeFocus(
+                            excluding: !desktop,
+                            child: Slider(
+                              value: volume,
+                              max: 100,
+                              onChanged: (v) {
+                                _setVolume(v);
+                                hideTimer?.cancel();
+                              },
+                              onChangeEnd: (_) => _poke(),
+                            ),
+                          ),
+                        ),
+                        if (desktop) const SizedBox(width: 12),
                         if (desktop) Pill(icon: fullscreen ? Icons.fullscreen_exit_rounded : Icons.fullscreen_rounded, tooltip: 'Full screen  (F)', height: 44, onTap: () => _setFullscreen(!fullscreen)),
                       ],
                     ),

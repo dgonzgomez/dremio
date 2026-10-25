@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -364,11 +365,14 @@ class PosterCard extends StatelessWidget {
 
 /// A titled horizontal row of posters, with arrow buttons for mouse users.
 class Shelf extends StatefulWidget {
-  const Shelf({super.key, required this.title, required this.items, required this.onOpen, this.filter = true});
+  const Shelf({super.key, required this.title, required this.items, required this.onOpen, this.filter = true, this.wheel = false});
   final String title;
   final List<Meta> items;
   final void Function(Meta) onOpen;
   final bool filter;
+
+  /// Lets a vertical mouse wheel scroll the row sideways, handing back to the page at either end.
+  final bool wheel;
 
   @override
   State<Shelf> createState() => _ShelfState();
@@ -387,6 +391,14 @@ class _ShelfState extends State<Shelf> {
   void _page(int direction) {
     final width = _scroll.position.viewportDimension * .8;
     _scroll.animateTo((_scroll.offset + direction * width).clamp(0, _scroll.position.maxScrollExtent), duration: const Duration(milliseconds: 380), curve: Curves.easeOutCubic);
+  }
+
+  void _wheel(PointerSignalEvent e) {
+    if (!widget.wheel || e is! PointerScrollEvent || e.scrollDelta.dy == 0 || !_scroll.hasClients) return;
+    final p = _scroll.position;
+    final target = (p.pixels + e.scrollDelta.dy * 2).clamp(p.minScrollExtent, p.maxScrollExtent);
+    if (target == p.pixels) return;
+    GestureBinding.instance.pointerSignalResolver.register(e, (_) => _scroll.jumpTo(target));
   }
 
   @override
@@ -409,14 +421,17 @@ class _ShelfState extends State<Shelf> {
             height: height + 36,
             child: Stack(
               children: [
-                ListView.separated(
-                  controller: _scroll,
-                  scrollDirection: Axis.horizontal,
-                  clipBehavior: Clip.none,
-                  padding: EdgeInsets.fromLTRB(gutter(context), 16, gutter(context), 18),
-                  itemCount: items.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 14),
-                  itemBuilder: (context, i) => PosterCard(meta: items[i], width: width, onOpen: () => widget.onOpen(items[i])),
+                Listener(
+                  onPointerSignal: _wheel,
+                  child: ListView.separated(
+                    controller: _scroll,
+                    scrollDirection: Axis.horizontal,
+                    clipBehavior: Clip.none,
+                    padding: EdgeInsets.fromLTRB(gutter(context), 16, gutter(context), 18),
+                    itemCount: items.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 14),
+                    itemBuilder: (context, i) => PosterCard(meta: items[i], width: width, onOpen: () => widget.onOpen(items[i])),
+                  ),
                 ),
                 if (_hover) ...[
                   Positioned(
