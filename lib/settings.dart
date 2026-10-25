@@ -5,6 +5,7 @@ import 'main.dart';
 import 'store.dart';
 import 'streams.dart';
 import 'theme.dart';
+import 'update.dart';
 import 'widgets.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -16,13 +17,77 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   final store = Store.instance;
   final link = TextEditingController();
-  bool editing = false, checking = false;
-  String feedback = '';
+  bool editing = false, checking = false, updating = false;
+  String feedback = '', version = '', updateStatus = '';
+  Release? available;
+  double? progress;
 
   @override
   void initState() {
     super.initState();
     editing = store.connection.isEmpty;
+    currentVersion().then((v) {
+      if (mounted) setState(() => version = v);
+    });
+  }
+
+  Future<void> checkForUpdate() async {
+    setState(() {
+      updating = true;
+      available = null;
+      updateStatus = 'Checking…';
+    });
+    try {
+      final release = await latestRelease();
+      if (!mounted) return;
+      setState(() {
+        updating = false;
+        if (!isNewer(release.version, version)) {
+          updateStatus = 'You’re up to date.';
+        } else if (release.download == null) {
+          updateStatus = 'Version ${release.version} is out, but not for this device yet.';
+        } else {
+          available = release;
+          updateStatus = 'Version ${release.version} is available.';
+        }
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          updating = false;
+          updateStatus = 'Couldn’t reach GitHub.';
+        });
+      }
+    }
+  }
+
+  Future<void> applyUpdate(Release release) async {
+    setState(() {
+      updating = true;
+      progress = 0;
+      updateStatus = 'Downloading ${release.version}…';
+    });
+    try {
+      final file = await download(release.download!, (p) {
+        if (mounted) setState(() => progress = p);
+      });
+      if (mounted) setState(() => progress = null);
+      final message = await install(file, release.version);
+      if (mounted) {
+        setState(() {
+          updating = false;
+          updateStatus = message ?? 'Restarting…';
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          updating = false;
+          progress = null;
+          updateStatus = 'The update didn’t finish. Try again.';
+        });
+      }
+    }
   }
 
   @override
@@ -150,6 +215,31 @@ class _SettingsPageState extends State<SettingsPage> {
               for (final q in ['4K', '1080p', '720p', '480p']) ...[Pill(label: q, primary: store.resolution == q, height: 42, onTap: () => setState(() => store.resolution = q)), const SizedBox(width: 12)],
             ],
           ),
+          const SizedBox(height: 34),
+          Text(version.isEmpty ? 'Updates' : 'Updates  ·  version $version', style: text(13, color: muted)),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              if (available case final release?)
+                Pill(label: 'Update to ${release.version}', primary: true, onTap: updating ? () {} : () => applyUpdate(release))
+              else
+                Pill(label: 'Check for updates', onTap: updating ? () {} : checkForUpdate),
+              if (updateStatus.isNotEmpty) ...[
+                const SizedBox(width: 16),
+                Flexible(
+                  child: Text(updateStatus, style: text(13, color: muted)),
+                ),
+              ],
+            ],
+          ),
+          if (progress != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 360),
+                child: LinearProgressIndicator(value: progress, minHeight: 4, color: green, backgroundColor: const Color(0x40f4f8f1), borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
           const SizedBox(height: 34),
           Align(
             alignment: Alignment.centerLeft,
