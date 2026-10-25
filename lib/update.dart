@@ -9,6 +9,14 @@ import 'net.dart';
 const _repo = 'dgonzgomez/dremio';
 const _channel = MethodChannel('dremio/update');
 
+/// An update failure with a message worth showing as is.
+class UpdateError implements Exception {
+  const UpdateError(this.message);
+  final String message;
+  @override
+  String toString() => message;
+}
+
 class Release {
   const Release(this.version, this.download);
   final String version;
@@ -52,6 +60,7 @@ Future<File> download(Uri url, void Function(double progress) onProgress) async 
   final dir = Directory('${(await getTemporaryDirectory()).path}/updates');
   await dir.create(recursive: true);
   final file = File('${dir.path}/${Platform.isAndroid ? 'dremio.apk' : _assetName}');
+  if (await file.exists()) await file.delete();
   final client = HttpClient();
   try {
     final request = await client.getUrl(url);
@@ -67,6 +76,10 @@ Future<File> download(Uri url, void Function(double progress) onProgress) async 
       if (total > 0) onProgress(received / total);
     }
     await sink.close();
+    if (total > 0 && received != total) {
+      await file.delete();
+      throw const UpdateError('The download was cut short. Try again.');
+    }
     return file;
   } finally {
     client.close();
@@ -76,7 +89,13 @@ Future<File> download(Uri url, void Function(double progress) onProgress) async 
 /// Hands the download to the platform. Returns a message to show, or null when the app is about to restart.
 Future<String?> install(File file, String version) async {
   if (Platform.isAndroid) {
-    final started = await _channel.invokeMethod<bool>('install') ?? false;
+    final bool started;
+    try {
+      started = await _channel.invokeMethod<bool>('install') ?? false;
+    } on PlatformException catch (e) {
+      if (await file.exists()) await file.delete();
+      throw UpdateError(e.message ?? 'The update didn’t finish. Try again.');
+    }
     return started ? 'Confirm the install on screen.' : 'Allow Dremio to install apps, then try again.';
   }
   if (Platform.isWindows) {
@@ -90,7 +109,9 @@ Future<String?> install(File file, String version) async {
     }
     final script = File('${file.parent.path}/update.ps1');
     await script.writeAsString(_windowsScript);
-    await Process.start('powershell.exe', [
+    final started = File('${file.parent.path}/update.started');
+    if (await started.exists()) await started.delete();
+    final helper = await Process.start('powershell.exe', [
       '-NoProfile',
       '-ExecutionPolicy',
       'Bypass',
@@ -108,8 +129,16 @@ Future<String?> install(File file, String version) async {
       _windowsLog.path,
       '-Exe',
       Platform.resolvedExecutable,
+      '-Started',
+      started.path,
     ], mode: ProcessStartMode.detached);
-    exit(0);
+    // Security software can stop the helper silently; only quit once it has said it's running.
+    for (var i = 0; i < 40; i++) {
+      if (await started.exists()) exit(0);
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+    helper.kill();
+    return 'Windows didn’t let the updater run. Download Dremio-windows-x64.zip from GitHub and replace your Dremio folder with it.';
   }
   // The Mac app is sandboxed and can't replace itself, so unpack the new one into Downloads and show it.
   final downloads = await getDownloadsDirectory();
@@ -143,12 +172,14 @@ Future<String?> lastUpdateFailure() async {
 
 // Always relaunches Dremio, old or new. Files can stay locked for a moment after exit, so copying retries.
 const _windowsScript = r'''
-param([int]$ProcessId, [string]$Zip, [string]$Target, [string]$Exe, [string]$Log)
+param([int]$ProcessId, [string]$Zip, [string]$Target, [string]$Exe, [string]$Log, [string]$Started)
 $ErrorActionPreference = 'Stop'
 try {
+  New-Item -ItemType File -Path $Started -Force | Out-Null
   Wait-Process -Id $ProcessId -Timeout 30 -ErrorAction SilentlyContinue
   $staging = Join-Path ([IO.Path]::GetTempPath()) ('dremio-update-' + [guid]::NewGuid())
-  Expand-Archive -LiteralPath $Zip -DestinationPath $staging -Force
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  [IO.Compression.ZipFile]::ExtractToDirectory($Zip, $staging)
   $copied = $false
   for ($i = 0; $i -lt 20 -and -not $copied; $i++) {
     try {
@@ -165,6 +196,6 @@ try {
 } catch {
   "$($_.Exception.Message)" | Out-File -FilePath $Log -Encoding utf8
 } finally {
-  Start-Process -FilePath $Exe
+  Start-Process -FilePath $Exe -WorkingDirectory (Split-Path -Parent $Exe)
 }
 ''';

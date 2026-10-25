@@ -45,6 +45,9 @@ class Store {
   bool get hdr => _prefs.getBool('hdr') ?? true;
   set hdr(bool value) => _prefs.setBool('hdr', value);
 
+  bool get dataSaver => _prefs.getBool('dataSaver') ?? false;
+  set dataSaver(bool value) => _prefs.setBool('dataSaver', value);
+
   bool get hasSource => _sources.isNotEmpty;
   bool connected(String id) => _sources.containsKey(id);
   String sourceLink(String id) => _sources[id] ?? '';

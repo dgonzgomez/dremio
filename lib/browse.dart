@@ -47,25 +47,22 @@ class Screen extends StatelessWidget {
       child: Stack(
         children: [
           Positioned.fill(child: child),
-          if (desktop) ...[
-            if (Platform.isMacOS)
-              Positioned(
-                left: railWidth,
-                right: 0,
-                top: 0,
-                height: 28,
-                child: const DragToMoveArea(child: SizedBox.expand()),
-              ),
-            const Positioned(left: 0, top: 0, bottom: 0, child: SideRail()),
-          ] else
-            const Positioned(left: 0, right: 0, top: 0, child: NavBar()),
+          if (Platform.isMacOS)
+            const Positioned(
+              left: railWidth,
+              right: 0,
+              top: 0,
+              height: 28,
+              child: DragToMoveArea(child: SizedBox.expand()),
+            ),
+          const Positioned(left: 0, top: 0, bottom: 0, child: SideRail()),
         ],
       ),
     ),
   );
 }
 
-/// Desktop navigation: a slim rail on the left (logo, tabs, settings) that slides out over the page on hover.
+/// Navigation: a slim rail on the left (logo, tabs, settings) that slides out over the page on hover or remote focus.
 class SideRail extends StatefulWidget {
   const SideRail({super.key});
   @override
@@ -77,6 +74,21 @@ class _SideRailState extends State<SideRail> {
 
   /// Showing the Lookback decades instead of the main tabs.
   bool decades = false;
+  final lookbackFocus = FocusNode(debugLabel: 'Lookback'), decadeFocus = FocusNode(debugLabel: 'First decade');
+
+  @override
+  void dispose() {
+    lookbackFocus.dispose();
+    decadeFocus.dispose();
+    super.dispose();
+  }
+
+  /// Swaps panels; on the remote, focus follows into the panel that slid in.
+  void _showDecades(bool show) {
+    final follow = focused;
+    setState(() => decades = show);
+    if (follow) WidgetsBinding.instance.addPostFrameCallback((_) => (show ? decadeFocus : lookbackFocus).requestFocus());
+  }
 
   void _tab(String tab) {
     navigatorKey.currentState?.popUntil((r) => r.isFirst);
@@ -104,9 +116,10 @@ class _SideRailState extends State<SideRail> {
               icon: const Icon(Icons.history_rounded),
               label: 'Lookback',
               selected: page.startsWith('Lookback:') && !canPop,
+              focusNode: lookbackFocus,
               onTap: () {
                 Catalog.instance.warmLookback();
-                setState(() => decades = true);
+                _showDecades(true);
               },
             ),
             _RailItem(open: open, icon: const Icon(Icons.bookmark_border_rounded), label: 'My List', selected: selected('My List'), onTap: () => _tab('My List')),
@@ -116,16 +129,17 @@ class _SideRailState extends State<SideRail> {
           key: const ValueKey('decades'),
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _RailItem(open: open, icon: const Icon(Icons.arrow_back_rounded), label: 'Lookback', onTap: () => setState(() => decades = false)),
+            _RailItem(open: open, icon: const Icon(Icons.arrow_back_rounded), label: 'Lookback', onTap: () => _showDecades(false)),
             const SizedBox(height: 8),
             for (final d in Catalog.decades)
               _RailItem(
                 open: open,
+                focusNode: d == Catalog.decades.first ? decadeFocus : null,
                 badge: "'${(d % 100).toString().padLeft(2, '0')}s",
                 label: '${d}s',
                 selected: selected('Lookback:$d'),
                 onTap: () {
-                  setState(() => decades = false);
+                  _showDecades(false);
                   _tab('Lookback:$d');
                 },
               ),
@@ -187,7 +201,8 @@ class _SideRailState extends State<SideRail> {
 }
 
 class _RailItem extends StatefulWidget {
-  const _RailItem({required this.open, this.icon, this.badge, required this.label, required this.onTap, this.selected = false, this.labelStyle});
+  const _RailItem({required this.open, this.icon, this.badge, required this.label, required this.onTap, this.selected = false, this.labelStyle, this.focusNode});
+  final FocusNode? focusNode;
   final bool open, selected;
   final Widget? icon;
 
@@ -210,6 +225,7 @@ class _RailItemState extends State<_RailItem> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
       child: FocusableActionDetector(
+        focusNode: widget.focusNode,
         mouseCursor: SystemMouseCursors.click,
         onShowHoverHighlight: (v) => setState(() => hovered = v),
         onShowFocusHighlight: (v) => setState(() => focused = v),
@@ -227,7 +243,7 @@ class _RailItemState extends State<_RailItem> {
                   Positioned.fill(
                     child: IgnorePointer(
                       child: AnimatedOpacity(
-                        opacity: hovered ? 1 : 0,
+                        opacity: lit ? 1 : 0,
                         duration: const Duration(milliseconds: 220),
                         child: const CustomPaint(painter: UfoSpotlight()),
                       ),
@@ -276,106 +292,6 @@ class _RailItemState extends State<_RailItem> {
         ),
       ),
     );
-  }
-}
-
-class NavBar extends StatelessWidget {
-  const NavBar({super.key});
-
-  void _tab(BuildContext context, String tab) {
-    navigatorKey.currentState?.popUntil((r) => r.isFirst);
-    currentPage.value = tab;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final mac = Platform.isMacOS;
-    final bar = Container(
-      height: 124,
-      padding: EdgeInsets.fromLTRB(mac ? 92 : gutter(context), mac ? 18 : 14, gutter(context), 0),
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, stops: [0, 0.55, 1], colors: [Color(0xf5070c09), Color(0xd9070c09), Color(0x00070c09)]),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Align(
-              alignment: Alignment.topLeft,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (Navigator.of(context).canPop()) ...[Pill(icon: Icons.arrow_back_rounded, tooltip: 'Back  (Esc)', height: 40, onTap: goBack), const SizedBox(width: 18)],
-                  GestureDetector(
-                    onTap: () => _tab(context, 'Home'),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Logo(size: 27),
-                        const SizedBox(width: 9),
-                        Text('dremio', style: text(24, weight: FontWeight.w500, spacing: -1)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          ValueListenableBuilder<String>(
-            valueListenable: currentPage,
-            builder: (context, page, _) {
-              final onBrowse = !(navigatorKey.currentState?.canPop() ?? false);
-              return Container(
-                padding: const EdgeInsets.all(5),
-                decoration: BoxDecoration(
-                  color: const Color(0xb51b251e),
-                  borderRadius: BorderRadius.circular(25),
-                  border: Border.all(color: const Color(0x354d6851)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (final tab in ['Home', 'Movies', 'Series', 'My List'])
-                      Lift(
-                        scale: 1.03,
-                        onTap: () => _tab(context, tab),
-                        builder: (context, active) {
-                          final selected = page == tab && onBrowse;
-                          return AnimatedContainer(
-                            duration: const Duration(milliseconds: 160),
-                            height: 36,
-                            padding: const EdgeInsets.symmetric(horizontal: 20),
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(color: active ? white : (selected ? green : Colors.transparent), borderRadius: BorderRadius.circular(21)),
-                            child: Text(
-                              tab,
-                              style: text(13, weight: FontWeight.w500, color: active || selected ? ink : const Color(0xffb9c5ba)),
-                            ),
-                          );
-                        },
-                      ),
-                  ],
-                ),
-              );
-            },
-          ),
-          Expanded(
-            child: Align(
-              alignment: Alignment.topRight,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Pill(icon: Icons.search, tooltip: 'Search  (⌘F)', height: 40, onTap: () => openSearch(context)),
-                  const SizedBox(width: 10),
-                  Pill(icon: Icons.settings_outlined, tooltip: 'Settings', height: 40, onTap: () => openSettings(context)),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-    return mac ? DragToMoveArea(child: bar) : bar;
   }
 }
 

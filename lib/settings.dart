@@ -85,12 +85,12 @@ class _SettingsPageState extends State<SettingsPage> {
           updateStatus = message ?? 'Restarting…';
         });
       }
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
         setState(() {
           updating = false;
           progress = null;
-          updateStatus = 'The update didn’t finish. Try again.';
+          updateStatus = e is UpdateError ? e.message : 'The update didn’t finish. Try again.';
         });
       }
     }
@@ -261,6 +261,23 @@ class _SettingsPageState extends State<SettingsPage> {
                 const SizedBox(width: 16),
                 Flexible(
                   child: Text(store.hdr ? 'HDR sources are allowed.' : 'HDR sources are skipped.', style: text(13, color: muted)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 34),
+            Text('Data Saver', style: text(13, color: muted)),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Pill(label: 'On', primary: store.dataSaver, height: 42, onTap: () => setState(() => store.dataSaver = true)),
+                const SizedBox(width: 12),
+                Pill(label: 'Off', primary: !store.dataSaver, height: 42, onTap: () => setState(() => store.dataSaver = false)),
+                const SizedBox(width: 16),
+                Flexible(
+                  child: Text(
+                    store.dataSaver ? 'Prefers files under ${dataSaverGb.toInt()} GB, so playback starts faster.' : 'Picks the best match regardless of file size.',
+                    style: text(13, color: muted),
+                  ),
                 ),
               ],
             ),

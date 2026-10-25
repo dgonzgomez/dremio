@@ -10,8 +10,10 @@ class StreamChoice {
       quality = streamQuality(stream),
       score = rank(stream, preferred),
       label = streamLabel(stream, streamQuality(stream)),
-      headers = _headers(stream);
+      headers = _headers(stream),
+      sizeGb = streamSizeGb(stream);
   final String url, quality, label;
+  final double? sizeGb;
   final int score;
   final Map<String, String> headers;
 
@@ -104,7 +106,7 @@ Future<List<StreamChoice>> resolveStreams(String type, String video) async {
       final manifest = Store.instance.sourceLink(id);
       final base = manifest.substring(0, manifest.lastIndexOf('/'));
       final response = await getJson('$base/stream/${Uri.encodeComponent(type)}/${Uri.encodeComponent(video)}.json', timeout: const Duration(seconds: 40));
-      final found = selectStreams(response is Map ? response['streams'] : null, Store.instance.resolution, hdr: Store.instance.hdr);
+      final found = selectStreams(response is Map ? response['streams'] : null, Store.instance.resolution, hdr: Store.instance.hdr, dataSaver: Store.instance.dataSaver);
       if (found.isNotEmpty) return found;
       failure = null;
     } catch (e) {
@@ -115,9 +117,22 @@ Future<List<StreamChoice>> resolveStreams(String type, String video) async {
   return const [];
 }
 
+/// File size in GB from the add-on's hints or text (e.g. "💾 12.4 GB"), or null when it doesn't say.
+double? streamSizeGb(Map<String, dynamic> s) {
+  final bytes = (s['behaviorHints'] as Map?)?['videoSize'];
+  if (bytes is num && bytes > 0) return bytes / (1 << 30);
+  final m = RegExp(r'(\d+(?:[.,]\d+)?)\s*(gb|gib|mb|mib)\b').firstMatch(_description(s));
+  if (m == null) return null;
+  final value = double.tryParse(m[1]!.replaceAll(',', '.')) ?? 0;
+  return m[2]!.startsWith('m') ? value / 1024 : value;
+}
+
+/// Data Saver's limit: larger files are only used when nothing smaller plays.
+const dataSaverGb = 7.0;
+
 bool isHdr(Map<String, dynamic> s) => RegExp(r'hdr|dovi|dolby vision|\bdv\b').hasMatch(_description(s));
 
-List<StreamChoice> selectStreams(dynamic streams, String preferred, {bool hdr = true}) {
+List<StreamChoice> selectStreams(dynamic streams, String preferred, {bool hdr = true, bool dataSaver = false}) {
   final seen = <String>{};
   final choices = <StreamChoice>[];
   for (final raw in streams is List ? streams : const []) {
@@ -130,7 +145,14 @@ List<StreamChoice> selectStreams(dynamic streams, String preferred, {bool hdr = 
     if (!hdr && isHdr(stream)) continue;
     if (seen.add(uri.toString())) choices.add(StreamChoice(stream, preferred));
   }
-  choices.sort((a, b) => b.score.compareTo(a.score));
+  // With Data Saver, files known to be under the limit come first, then unlabeled ones, then big ones.
+  int tier(StreamChoice c) {
+    if (!dataSaver) return 0;
+    final gb = c.sizeGb;
+    return gb == null ? 1 : (gb < dataSaverGb ? 0 : 2);
+  }
+
+  choices.sort((a, b) => tier(a) != tier(b) ? tier(a).compareTo(tier(b)) : b.score.compareTo(a.score));
   return choices.take(8).toList();
 }
 

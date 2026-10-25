@@ -7,23 +7,12 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import 'artwork_cache.dart';
 import 'catalog.dart';
-import 'main.dart' show desktop;
 import 'store.dart';
 import 'theme.dart';
 
 /// Focus or hover lifts the child like a hovering UFO: slight scale, gentle bob, soft green underglow.
 class Lift extends StatefulWidget {
-  const Lift({
-    super.key,
-    required this.builder,
-    this.onTap,
-    this.onKey,
-    this.focusNode,
-    this.autofocus = false,
-    this.glow = false,
-    this.scale = 1.045,
-    this.onFocus,
-  });
+  const Lift({super.key, required this.builder, this.onTap, this.onKey, this.focusNode, this.autofocus = false, this.glow = false, this.scale = 1.045, this.onFocus});
   final Widget Function(BuildContext context, bool active) builder;
   final VoidCallback? onTap;
   final KeyEventResult Function(KeyEvent event)? onKey;
@@ -37,10 +26,7 @@ class Lift extends StatefulWidget {
 }
 
 class _LiftState extends State<Lift> with SingleTickerProviderStateMixin {
-  late final AnimationController _bob = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1500),
-  );
+  late final AnimationController _bob = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500));
   bool _focused = false, _hovered = false;
   bool get _active => _focused || _hovered;
 
@@ -79,16 +65,12 @@ class _LiftState extends State<Lift> with SingleTickerProviderStateMixin {
                 event.logicalKey == LogicalKeyboardKey.numpadEnter ||
                 event.logicalKey == LogicalKeyboardKey.space)) {
           widget.onTap?.call();
-          return widget.onTap == null
-              ? KeyEventResult.ignored
-              : KeyEventResult.handled;
+          return widget.onTap == null ? KeyEventResult.ignored : KeyEventResult.handled;
         }
         return KeyEventResult.ignored;
       },
       child: MouseRegion(
-        cursor: widget.onTap == null
-            ? MouseCursor.defer
-            : SystemMouseCursors.click,
+        cursor: widget.onTap == null ? MouseCursor.defer : SystemMouseCursors.click,
         onEnter: (_) {
           _hovered = true;
           _update();
@@ -103,15 +85,8 @@ class _LiftState extends State<Lift> with SingleTickerProviderStateMixin {
           child: AnimatedBuilder(
             animation: _bob,
             builder: (context, child) => Transform.translate(
-              offset: Offset(
-                0,
-                _active ? -2 - 3 * Curves.easeInOut.transform(_bob.value) : 0,
-              ),
-              child: AnimatedScale(
-                scale: _active ? widget.scale : 1,
-                duration: const Duration(milliseconds: 190),
-                child: child,
-              ),
+              offset: Offset(0, _active ? -2 - 3 * Curves.easeInOut.transform(_bob.value) : 0),
+              child: AnimatedScale(scale: _active ? widget.scale : 1, duration: const Duration(milliseconds: 190), child: child),
             ),
             child: Stack(
               clipBehavior: Clip.none,
@@ -159,11 +134,7 @@ class _UfoGlow extends CustomPainter {
     canvas.drawCircle(
       Offset.zero,
       radius,
-      Paint()
-        ..shader = const RadialGradient(
-          colors: [Color(0x90bdff59), Color(0x28bdff59), Color(0x00bdff59)],
-          stops: [0, .45, 1],
-        ).createShader(Rect.fromCircle(center: Offset.zero, radius: radius)),
+      Paint()..shader = const RadialGradient(colors: [Color(0x90bdff59), Color(0x28bdff59), Color(0x00bdff59)], stops: [0, .45, 1]).createShader(Rect.fromCircle(center: Offset.zero, radius: radius)),
     );
   }
 
@@ -194,18 +165,12 @@ class UfoSpotlight extends CustomPainter {
           stops: [0, .4, 1],
         ).createShader(Offset.zero & size),
     );
-    final source = Rect.fromCenter(
-      center: Offset(w / 2, 0),
-      width: w * .7,
-      height: w * .22,
-    );
+    final source = Rect.fromCenter(center: Offset(w / 2, 0), width: w * .7, height: w * .22);
     canvas.drawOval(
       source,
       Paint()
         ..blendMode = BlendMode.screen
-        ..shader = const RadialGradient(
-          colors: [Color(0x80f4ffe0), Color(0x00bdff59)],
-        ).createShader(source),
+        ..shader = const RadialGradient(colors: [Color(0x80f4ffe0), Color(0x00bdff59)]).createShader(source),
     );
   }
 
@@ -214,18 +179,7 @@ class UfoSpotlight extends CustomPainter {
 }
 
 class Pill extends StatelessWidget {
-  const Pill({
-    super.key,
-    this.label,
-    this.icon,
-    this.primary = false,
-    required this.onTap,
-    this.focusNode,
-    this.autofocus = false,
-    this.onKey,
-    this.tooltip,
-    this.height = 46,
-  });
+  const Pill({super.key, this.label, this.icon, this.primary = false, required this.onTap, this.focusNode, this.autofocus = false, this.onKey, this.tooltip, this.height = 46});
   final String? label;
   final IconData? icon;
   final bool primary, autofocus;
@@ -249,18 +203,12 @@ class Pill extends StatelessWidget {
           height: height,
           width: label == null ? height : null,
           padding: EdgeInsets.symmetric(horizontal: label == null ? 0 : 22),
-          decoration: BoxDecoration(
-            color: active
-                ? const Color(0xffd5ff91)
-                : (primary ? green : const Color(0xcc202b23)),
-            borderRadius: BorderRadius.circular(height / 2),
-          ),
+          decoration: BoxDecoration(color: active ? const Color(0xffd5ff91) : (primary ? green : const Color(0xcc202b23)), borderRadius: BorderRadius.circular(height / 2)),
           child: Row(
             mainAxisSize: label == null ? MainAxisSize.max : MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              if (icon != null)
-                Icon(icon, size: label == null ? 24 : 20, color: fg),
+              if (icon != null) Icon(icon, size: label == null ? 24 : 20, color: fg),
               if (icon != null && label != null) const SizedBox(width: 8),
               if (label != null)
                 Text(
@@ -272,13 +220,7 @@ class Pill extends StatelessWidget {
         );
       },
     );
-    return tooltip == null
-        ? pill
-        : Tooltip(
-            message: tooltip!,
-            waitDuration: const Duration(milliseconds: 600),
-            child: pill,
-          );
+    return tooltip == null ? pill : Tooltip(message: tooltip!, waitDuration: const Duration(milliseconds: 600), child: pill);
   }
 }
 
@@ -286,11 +228,7 @@ class Logo extends StatelessWidget {
   const Logo({super.key, this.size = 27});
   final double size;
   @override
-  Widget build(BuildContext context) => SvgPicture.asset(
-    'assets/dremio-mark.svg',
-    height: size,
-    width: size * 48 / 56,
-  );
+  Widget build(BuildContext context) => SvgPicture.asset('assets/dremio-mark.svg', height: size, width: size * 48 / 56);
 }
 
 /// The launch logo bobbing and rocking over its glow. Geometry matches the Android launch drawable so the hand-off doesn't jump.
@@ -300,12 +238,8 @@ class HoverLogo extends StatefulWidget {
   State<HoverLogo> createState() => _HoverLogoState();
 }
 
-class _HoverLogoState extends State<HoverLogo>
-    with SingleTickerProviderStateMixin {
-  late final clock = AnimationController(
-    vsync: this,
-    duration: const Duration(seconds: 1),
-  )..repeat();
+class _HoverLogoState extends State<HoverLogo> with SingleTickerProviderStateMixin {
+  late final clock = AnimationController(vsync: this, duration: const Duration(seconds: 1))..repeat();
   final watch = Stopwatch()..start();
 
   @override
@@ -319,8 +253,7 @@ class _HoverLogoState extends State<HoverLogo>
     animation: clock,
     builder: (context, _) {
       final ms = watch.elapsedMilliseconds;
-      final bob = math.sin(ms / 1800 * 2 * math.pi),
-          rock = math.sin(ms / 2600 * 2 * math.pi);
+      final bob = math.sin(ms / 1800 * 2 * math.pi), rock = math.sin(ms / 2600 * 2 * math.pi);
       return SizedBox(
         width: 72,
         height: 108,
@@ -334,10 +267,7 @@ class _HoverLogoState extends State<HoverLogo>
               child: Transform.scale(
                 scaleX: 1 - .2 * bob,
                 child: const DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Color(0x33bdff59),
-                    borderRadius: BorderRadius.all(Radius.elliptical(15, 2.7)),
-                  ),
+                  decoration: BoxDecoration(color: Color(0x33bdff59), borderRadius: BorderRadius.all(Radius.elliptical(15, 2.7))),
                 ),
               ),
             ),
@@ -366,10 +296,7 @@ class Swirl extends StatefulWidget {
 }
 
 class _SwirlState extends State<Swirl> with SingleTickerProviderStateMixin {
-  late final spin = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 900),
-  )..repeat();
+  late final spin = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))..repeat();
 
   @override
   void dispose() {
@@ -380,10 +307,7 @@ class _SwirlState extends State<Swirl> with SingleTickerProviderStateMixin {
   @override
   Widget build(BuildContext context) => RotationTransition(
     turns: spin,
-    child: CustomPaint(
-      size: Size.square(widget.size),
-      painter: _SwirlPainter(),
-    ),
+    child: CustomPaint(size: Size.square(widget.size), painter: _SwirlPainter()),
   );
 }
 
@@ -396,10 +320,7 @@ class _SwirlPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = stroke
       ..strokeCap = StrokeCap.round
-      ..shader = const SweepGradient(
-        colors: [Color(0x00bdff59), green],
-        stops: [0.1, 0.85],
-      ).createShader(rect);
+      ..shader = const SweepGradient(colors: [Color(0x00bdff59), green], stops: [0.1, 0.85]).createShader(rect);
     canvas.drawArc(rect, 0.35, 5.2, false, paint);
   }
 
@@ -408,14 +329,7 @@ class _SwirlPainter extends CustomPainter {
 }
 
 class Artwork extends StatelessWidget {
-  const Artwork(
-    this.url, {
-    super.key,
-    this.width,
-    this.radius = 7,
-    this.fit = BoxFit.cover,
-    this.alignment = Alignment.center,
-  });
+  const Artwork(this.url, {super.key, this.width, this.radius = 7, this.fit = BoxFit.cover, this.alignment = Alignment.center});
   final String url;
   final double? width;
   final double radius;
@@ -439,13 +353,7 @@ class Artwork extends StatelessWidget {
                 height: double.infinity,
                 gaplessPlayback: true,
                 errorBuilder: (_, _, _) => const SizedBox.expand(),
-                frameBuilder: (context, child, frame, sync) => sync
-                    ? child
-                    : AnimatedOpacity(
-                        opacity: frame == null ? 0 : 1,
-                        duration: const Duration(milliseconds: 260),
-                        child: child,
-                      ),
+                frameBuilder: (context, child, frame, sync) => sync ? child : AnimatedOpacity(opacity: frame == null ? 0 : 1, duration: const Duration(milliseconds: 260), child: child),
               )
             : const SizedBox.expand(),
       ),
@@ -453,28 +361,17 @@ class Artwork extends StatelessWidget {
   }
 }
 
-String posterOf(Meta m) => str(m, 'poster').startsWith('https://')
-    ? str(m, 'poster')
-    : str(m, 'background');
+String posterOf(Meta m) => str(m, 'poster').startsWith('https://') ? str(m, 'poster') : str(m, 'background');
 
 class PosterCard extends StatelessWidget {
-  const PosterCard({
-    super.key,
-    required this.meta,
-    required this.width,
-    required this.onOpen,
-    this.showEpisode = false,
-  });
+  const PosterCard({super.key, required this.meta, required this.width, required this.onOpen, this.showEpisode = false});
   final bool showEpisode;
   final Meta meta;
   final double width;
   final VoidCallback onOpen;
 
   @override
-  Widget build(BuildContext context) => ValueListenableBuilder<int>(
-    valueListenable: Store.instance.playbackChanges,
-    builder: (context, _, _) => _buildCard(context),
-  );
+  Widget build(BuildContext context) => ValueListenableBuilder<int>(valueListenable: Store.instance.playbackChanges, builder: (context, _, _) => _buildCard(context));
 
   Widget _buildCard(BuildContext context) {
     final progress = Store.instance.progress(meta);
@@ -498,9 +395,7 @@ class PosterCard extends StatelessWidget {
                       right: 0,
                       bottom: 0,
                       child: ClipRRect(
-                        borderRadius: const BorderRadius.vertical(
-                          bottom: Radius.circular(7),
-                        ),
+                        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(7)),
                         child: LinearProgressIndicator(
                           key: ValueKey('poster-progress:${str(meta, "id")}'),
                           value: progress.fraction,
@@ -517,10 +412,7 @@ class PosterCard extends StatelessWidget {
                       child: Container(
                         width: 22,
                         height: 22,
-                        decoration: BoxDecoration(
-                          color: const Color(0xe6070c09),
-                          borderRadius: BorderRadius.circular(11),
-                        ),
+                        decoration: BoxDecoration(color: const Color(0xe6070c09), borderRadius: BorderRadius.circular(11)),
                         child: const Icon(Icons.check, size: 14, color: green),
                       ),
                     ),
@@ -534,9 +426,7 @@ class PosterCard extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: text(13, color: active ? white : const Color(0xffcdd8cd)),
             ),
-            if (showEpisode &&
-                str(meta, 'type') == 'series' &&
-                progress.videoId.isNotEmpty) ...[
+            if (showEpisode && str(meta, 'type') == 'series' && progress.videoId.isNotEmpty) ...[
               const SizedBox(height: 4),
               Text(
                 progress.episodeLabel,
@@ -555,15 +445,7 @@ class PosterCard extends StatelessWidget {
 
 /// A titled horizontal row of posters, with arrow buttons for mouse users.
 class Shelf extends StatefulWidget {
-  const Shelf({
-    super.key,
-    required this.title,
-    required this.items,
-    required this.onOpen,
-    this.filter = true,
-    this.wheel = false,
-    this.continueWatching = false,
-  });
+  const Shelf({super.key, required this.title, required this.items, required this.onOpen, this.filter = true, this.wheel = false, this.continueWatching = false});
   final String title;
   final List<Meta> items;
   final void Function(Meta) onOpen;
@@ -588,41 +470,22 @@ class _ShelfState extends State<Shelf> {
 
   void _page(int direction) {
     final width = _scroll.position.viewportDimension * .8;
-    _scroll.animateTo(
-      (_scroll.offset + direction * width).clamp(
-        0,
-        _scroll.position.maxScrollExtent,
-      ),
-      duration: const Duration(milliseconds: 380),
-      curve: Curves.easeOutCubic,
-    );
+    _scroll.animateTo((_scroll.offset + direction * width).clamp(0, _scroll.position.maxScrollExtent), duration: const Duration(milliseconds: 380), curve: Curves.easeOutCubic);
   }
 
   void _wheel(PointerSignalEvent e) {
-    if (!widget.wheel ||
-        e is! PointerScrollEvent ||
-        e.scrollDelta.dy == 0 ||
-        !_scroll.hasClients) {
+    if (!widget.wheel || e is! PointerScrollEvent || e.scrollDelta.dy == 0 || !_scroll.hasClients) {
       return;
     }
     final p = _scroll.position;
-    final target = (p.pixels + e.scrollDelta.dy * 2).clamp(
-      p.minScrollExtent,
-      p.maxScrollExtent,
-    );
+    final target = (p.pixels + e.scrollDelta.dy * 2).clamp(p.minScrollExtent, p.maxScrollExtent);
     if (target == p.pixels) return;
-    GestureBinding.instance.pointerSignalResolver.register(
-      e,
-      (_) => _scroll.jumpTo(target),
-    );
+    GestureBinding.instance.pointerSignalResolver.register(e, (_) => _scroll.jumpTo(target));
   }
 
   @override
   Widget build(BuildContext context) {
-    final items =
-        (widget.filter ? Catalog.instance.playable(widget.items) : widget.items)
-            .take(20)
-            .toList();
+    final items = (widget.filter ? Catalog.instance.playable(widget.items) : widget.items).take(20).toList();
     if (items.isEmpty) return const SizedBox.shrink();
     final width = posterWidth(context);
     final height = width * 1.48 + 34 + (widget.continueWatching ? 20 : 0);
@@ -633,12 +496,7 @@ class _ShelfState extends State<Shelf> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: EdgeInsets.fromLTRB(
-              gutter(context),
-              10,
-              gutter(context),
-              4,
-            ),
+            padding: EdgeInsets.fromLTRB(gutter(context), 10, gutter(context), 4),
             child: Text(widget.title, style: text(20, weight: FontWeight.w500)),
           ),
           SizedBox(
@@ -651,20 +509,10 @@ class _ShelfState extends State<Shelf> {
                     controller: _scroll,
                     scrollDirection: Axis.horizontal,
                     clipBehavior: Clip.none,
-                    padding: EdgeInsets.fromLTRB(
-                      gutter(context),
-                      16,
-                      gutter(context),
-                      18,
-                    ),
+                    padding: EdgeInsets.fromLTRB(gutter(context), 16, gutter(context), 18),
                     itemCount: items.length,
                     separatorBuilder: (_, _) => const SizedBox(width: 14),
-                    itemBuilder: (context, i) => PosterCard(
-                      meta: items[i],
-                      width: width,
-                      showEpisode: widget.continueWatching,
-                      onOpen: () => widget.onOpen(items[i]),
-                    ),
+                    itemBuilder: (context, i) => PosterCard(meta: items[i], width: width, showEpisode: widget.continueWatching, onOpen: () => widget.onOpen(items[i])),
                   ),
                 ),
                 if (_hover) ...[
@@ -672,19 +520,13 @@ class _ShelfState extends State<Shelf> {
                     left: 6,
                     top: 16,
                     bottom: 52,
-                    child: _Arrow(
-                      icon: Icons.chevron_left,
-                      onTap: () => _page(-1),
-                    ),
+                    child: _Arrow(icon: Icons.chevron_left, onTap: () => _page(-1)),
                   ),
                   Positioned(
                     right: 6,
                     top: 16,
                     bottom: 52,
-                    child: _Arrow(
-                      icon: Icons.chevron_right,
-                      onTap: () => _page(1),
-                    ),
+                    child: _Arrow(icon: Icons.chevron_right, onTap: () => _page(1)),
                   ),
                 ],
               ],
@@ -708,10 +550,7 @@ class _Arrow extends StatelessWidget {
         builder: (context, active) => Container(
           width: 40,
           height: 40,
-          decoration: BoxDecoration(
-            color: active ? white : const Color(0xd9121c15),
-            shape: BoxShape.circle,
-          ),
+          decoration: BoxDecoration(color: active ? white : const Color(0xd9121c15), shape: BoxShape.circle),
           child: Icon(icon, color: active ? ink : white),
         ),
       ),
@@ -719,11 +558,10 @@ class _Arrow extends StatelessWidget {
   );
 }
 
-/// Width of the collapsed desktop side rail; the TV keeps its top bar.
-double get railWidth => desktop ? 76 : 0;
+/// Width of the collapsed side rail.
+const double railWidth = 76;
 
-double gutter(BuildContext context) =>
-    railWidth + (MediaQuery.sizeOf(context).width < 900 ? 28 : 48);
+double gutter(BuildContext context) => railWidth + (MediaQuery.sizeOf(context).width < 900 ? 28 : 48);
 
 double posterWidth(BuildContext context) {
   final w = MediaQuery.sizeOf(context).width;
@@ -746,10 +584,7 @@ class PosterGrid extends StatelessWidget {
       child: Wrap(
         spacing: 14,
         runSpacing: 26,
-        children: [
-          for (final m in items)
-            PosterCard(meta: m, width: width, onOpen: () => onOpen(m)),
-        ],
+        children: [for (final m in items) PosterCard(meta: m, width: width, onOpen: () => onOpen(m))],
       ),
     );
   }
