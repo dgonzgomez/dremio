@@ -96,6 +96,10 @@ Builds need several GB of temporary space (Gradle and Xcode caches). If a build 
 
 ## What's new
 
+### 0.5.3
+
+- Mac and Windows: the window opens sized to fit the screen, including with display scaling, so the title bar and its buttons stay reachable.
+
 ### 0.5.2
 
 - Alt+Enter toggles full screen anywhere on Mac and Windows, without also pressing the selected button.

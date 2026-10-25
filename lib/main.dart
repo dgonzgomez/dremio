@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -27,11 +28,12 @@ Future<void> main() async {
   }
   if (desktop) {
     await windowManager.ensureInitialized();
+    final fit = _fitScreen();
     await windowManager.waitUntilReadyToShow(
       WindowOptions(
         title: 'Dremio',
-        size: const Size(1440, 900),
-        minimumSize: const Size(960, 620),
+        size: fit.size,
+        minimumSize: fit.minimum,
         center: true,
         backgroundColor: ink,
         titleBarStyle: Platform.isMacOS
@@ -68,6 +70,22 @@ Future<void> main() async {
     await windowManager.focus();
   }
   Catalog.instance.refresh();
+}
+
+/// Opens at 1440x900 where it fits, otherwise shrinks to the screen (in logical
+/// pixels, so display scaling counts), leaving room for the title bar and taskbar.
+({Size size, Size minimum}) _fitScreen() {
+  final display =
+      WidgetsBinding.instance.platformDispatcher.views.first.display;
+  final screen = display.size / display.devicePixelRatio;
+  if (screen.isEmpty) {
+    return (size: const Size(1440, 900), minimum: const Size(960, 620));
+  }
+  final room = Size(screen.width * .92, screen.height * .85);
+  return (
+    size: Size(math.min(1440, room.width), math.min(900, room.height)),
+    minimum: Size(math.min(960, room.width), math.min(620, room.height)),
+  );
 }
 
 /// Remembers when the user last touched anything, so background refreshes and hero rotation stay out of the way.
