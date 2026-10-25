@@ -22,11 +22,23 @@ android {
         versionName = flutter.versionName
     }
 
+    // CI points DREMIO_KEYSTORE at a copy of the debug keystore that signed installed copies, so updates install over them.
+    val sharedKeystore = System.getenv("DREMIO_KEYSTORE")
+    signingConfigs {
+        if (sharedKeystore != null) {
+            create("shared") {
+                storeFile = file(sharedKeystore)
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("shared") ?: signingConfigs.getByName("debug")
         }
     }
 }

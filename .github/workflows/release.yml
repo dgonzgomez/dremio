@@ -74,8 +74,8 @@ jobs:
             echo "::warning::ANDROID_DEBUG_KEYSTORE secret not set; skipping the Android APK."
             echo "present=false" >> "$GITHUB_OUTPUT"
           else
-            mkdir -p ~/.android
-            echo "$KEYSTORE" | base64 -d > ~/.android/debug.keystore
+            echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/dremio.keystore"
+            echo "DREMIO_KEYSTORE=$RUNNER_TEMP/dremio.keystore" >> "$GITHUB_ENV"
             echo "present=true" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.key.outputs.present == 'true'
@@ -93,6 +93,18 @@ jobs:
           flutter pub get
           flutter build apk --release --target-platform android-arm
           mv build/app/outputs/flutter-apk/app-release.apk Dremio-android-arm.apk
+      - name: Check signature
+        if: steps.key.outputs.present == 'true'
+        env:
+          # Certificate of the key that signed the copies already installed; updates must match it.
+          EXPECTED: c726c9353f9e69e1887baec34c4f8d646a946d0c44626fb21826c9d677a9c1fd
+        run: |
+          apksigner=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner
+          actual=$("$apksigner" verify --print-certs Dremio-android-arm.apk | sed -n 's/.*certificate SHA-256 digest: //p' | head -1)
+          if [ "$actual" != "$EXPECTED" ]; then
+            echo "::error::APK is signed with $actual, expected $EXPECTED. Installed apps would refuse this update."
+            exit 1
+          fi
       - if: steps.key.outputs.present == 'true'
         uses: actions/upload-artifact@v4
         with:
