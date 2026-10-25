@@ -7,6 +7,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import 'artwork_cache.dart';
 import 'catalog.dart';
+import 'main.dart' show desktop;
 import 'store.dart';
 import 'theme.dart';
 
@@ -128,6 +129,16 @@ class _LiftState extends State<Lift> with SingleTickerProviderStateMixin {
                     ),
                   ),
                 widget.builder(context, _active),
+                if (widget.glow)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: AnimatedOpacity(
+                        opacity: _hovered ? 1 : 0,
+                        duration: const Duration(milliseconds: 220),
+                        child: const CustomPaint(painter: UfoSpotlight()),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -158,6 +169,48 @@ class _UfoGlow extends CustomPainter {
 
   @override
   bool shouldRepaint(_UfoGlow oldDelegate) => false;
+}
+
+/// A beam shining down from a saucer above: narrow and bright at the top, spreading and fading toward the bottom.
+class UfoSpotlight extends CustomPainter {
+  const UfoSpotlight();
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width, h = size.height, top = w * .12;
+    final beam = Path()
+      ..moveTo(w / 2 - top, 0)
+      ..lineTo(w / 2 + top, 0)
+      ..lineTo(w, h * .92)
+      ..lineTo(0, h * .92)
+      ..close();
+    canvas.drawPath(
+      beam,
+      Paint()
+        ..blendMode = BlendMode.screen
+        ..shader = const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0x66e9ffc8), Color(0x26bdff59), Color(0x00bdff59)],
+          stops: [0, .4, 1],
+        ).createShader(Offset.zero & size),
+    );
+    final source = Rect.fromCenter(
+      center: Offset(w / 2, 0),
+      width: w * .7,
+      height: w * .22,
+    );
+    canvas.drawOval(
+      source,
+      Paint()
+        ..blendMode = BlendMode.screen
+        ..shader = const RadialGradient(
+          colors: [Color(0x80f4ffe0), Color(0x00bdff59)],
+        ).createShader(source),
+    );
+  }
+
+  @override
+  bool shouldRepaint(UfoSpotlight oldDelegate) => false;
 }
 
 class Pill extends StatelessWidget {
@@ -666,8 +719,11 @@ class _Arrow extends StatelessWidget {
   );
 }
 
+/// Width of the collapsed desktop side rail; the TV keeps its top bar.
+double get railWidth => desktop ? 76 : 0;
+
 double gutter(BuildContext context) =>
-    MediaQuery.sizeOf(context).width < 900 ? 28 : 48;
+    railWidth + (MediaQuery.sizeOf(context).width < 900 ? 28 : 48);
 
 double posterWidth(BuildContext context) {
   final w = MediaQuery.sizeOf(context).width;

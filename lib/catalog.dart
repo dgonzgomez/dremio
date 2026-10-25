@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -24,7 +25,12 @@ const services = [
   ['hbm', 'HBO Max'],
   ['atp', 'Apple TV+'],
 ];
-const _mdbLists = {'movie/x-week': 'top-watched-movies-of-the-week', 'series/x-week': 'most-popular-shows-top-50', 'movie/x-fresh': 'latest-certified-fresh-releases', 'series/x-fresh': 'best-new-shows'};
+const _mdbLists = {
+  'movie/x-week': 'top-watched-movies-of-the-week',
+  'series/x-week': 'most-popular-shows-top-50',
+  'movie/x-fresh': 'latest-certified-fresh-releases',
+  'series/x-fresh': 'best-new-shows',
+};
 
 /// Catalog cache, refresh and recommendation ranking. Mirrors the Fire TV app.
 class Catalog extends ChangeNotifier {
@@ -139,10 +145,8 @@ class Catalog extends ChangeNotifier {
     }
     final url = key == 'trending' ? '$_tmdb/catalog/$type/tmdb.trending/genre=Day.json' : '$_streaming/catalog/$type/$key.json';
     for (final raw in _metas((await getJson(url))['metas'])) {
-      var id = str(raw, 'id');
-      if (!id.startsWith('tt')) id = str(raw, 'imdb_id');
-      if (!id.startsWith('tt')) id = RegExp(r'tt\d+').firstMatch(jsonEncode(raw['links'] ?? ''))?.group(0) ?? '';
-      if (!id.startsWith('tt')) continue;
+      final id = _imdbId(raw);
+      if (id.isEmpty) continue;
       final m = slim(raw, type, id);
       if (type == 'movie' && !m.containsKey('released')) {
         final full = await cachedMeta(type, id);
@@ -150,6 +154,93 @@ class Catalog extends ChangeNotifier {
       }
       out.add(m);
     }
+    return out;
+  }
+
+  /// TMDB-sourced metas carry the IMDb id in `imdb_id` or only inside their IMDb link.
+  static String _imdbId(Meta raw) {
+    for (final id in [str(raw, 'id'), str(raw, 'imdb_id'), RegExp(r'tt\d+').firstMatch(jsonEncode(raw['links'] ?? ''))?.group(0) ?? '']) {
+      if (id.startsWith('tt')) return id;
+    }
+    return '';
+  }
+
+  // Lookback -----------------------------------------------------------------
+
+  static const decades = [1940, 1950, 1960, 1970, 1980, 1990, 2000, 2010];
+
+  /// Per-year movie lists, TMDB popularity order. Kept out of [_catalogs] so old titles don't feed Home's rows.
+  final _years = <int, List<Meta>>{};
+  final _decadeLoads = <int, Future<void>>{};
+
+  Future<void> loadDecade(int start) => _decadeLoads[start] ??= _loadDecade(start).catchError((Object e) {
+    _decadeLoads.remove(start);
+    throw e;
+  });
+
+  Future<void> _loadDecade(int start) async {
+    await Future.wait([for (var y = start; y < start + 10; y++) _loadYear(y)]);
+    if (!_years.keys.any((y) => y >= start && y < start + 10)) throw HttpException('No movies for the ${start}s');
+  }
+
+  Future<void> _loadYear(int y) async {
+    final file = _file('movie/lookback/v2/$y');
+    try {
+      if (file.existsSync() && DateTime.now().difference(file.lastModifiedSync()).inDays < 30) {
+        final list = _metaList((jsonDecode(await file.readAsString()) as Map)['metas']);
+        if (list.isNotEmpty) {
+          _years[y] = list;
+          return;
+        }
+      }
+    } catch (_) {}
+    final pages = await Future.wait([
+      for (final page in ['', '&skip=20', '&skip=40'])
+        getJson('$_tmdb/catalog/movie/tmdb.year/genre=$y$page.json').then((r) => _metas(r['metas'])).catchError((Object e) {
+          debugPrint('Lookback $y$page failed: $e');
+          return <Meta>[];
+        }),
+    ]);
+    final out = <Meta>[], seen = <String>{};
+    for (final raw in pages.expand((p) => p)) {
+      final id = _imdbId(raw);
+      if (id.isNotEmpty && seen.add(id)) out.add(slim(raw, 'movie', id));
+    }
+    if (out.isEmpty) return;
+    _years[y] = out;
+    await file.writeAsString(jsonEncode({'metas': out}));
+  }
+
+  /// Loads every decade one after another in the background so Lookback opens instantly.
+  Future<void> warmLookback() async {
+    for (final d in decades) {
+      try {
+        await loadDecade(d);
+      } catch (_) {}
+    }
+  }
+
+  List<Meta> releasedIn(int y) => _years[y] ?? const [];
+
+  /// Same numbers all day, different ones tomorrow.
+  static Random daily(int salt) => Random(DateTime.now().difference(DateTime(2020)).inDays * 10007 + salt);
+
+  /// The decade's movies, most popular first: each year's popularity rank blended with its IMDb rating,
+  /// plus a daily nudge so the page reshuffles each day.
+  List<Meta> decade(int start) {
+    final rng = daily(start);
+    final value = <String, double>{};
+    final out = <Meta>[];
+    for (var y = start; y < start + 10; y++) {
+      final list = releasedIn(y);
+      for (var i = 0; i < list.length; i++) {
+        final id = str(list[i], 'id');
+        if (value.containsKey(id)) continue;
+        value[id] = (1 - i / list.length) * 3 + (rating(list[i]) - 7) + rng.nextDouble() * 2;
+        out.add(list[i]);
+      }
+    }
+    out.sort((a, b) => value[str(b, 'id')]!.compareTo(value[str(a, 'id')]!));
     return out;
   }
 

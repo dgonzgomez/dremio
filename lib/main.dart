@@ -68,6 +68,7 @@ Future<void> main() async {
   }
   await boot;
   runApp(const DremioApp());
+  Timer(const Duration(seconds: 15), Catalog.instance.warmLookback);
   if (desktop) {
     // A hidden window may never get a vsync, so don't wait on the first frame forever.
     await Future.any([

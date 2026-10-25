@@ -96,6 +96,11 @@ Builds need several GB of temporary space (Gradle and Xcode caches). If a build 
 
 ## What's new
 
+### 0.6.0
+
+- Mac and Windows: a new left sidebar with the logo at the top, the tabs in the middle and Settings at the bottom. It slides out on hover, and hovering an item shines a UFO-style spotlight on it.
+- Lookback: pick a decade from the 1940s to the 2010s to get a home page of that decade's popular movies, with banners, the best of the decade, highest rated, top genres and a row for each year. Rows avoid repeating each other, the order reshuffles daily, and decades preload in the background so they open instantly.
+
 ### 0.5.6
 
 - Windows: Alt+Enter is handled by the window itself, so it always toggles full screen, never presses the selected button, and doesn't play the error sound.
