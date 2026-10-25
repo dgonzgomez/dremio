@@ -49,6 +49,17 @@ class Catalog extends ChangeNotifier {
     final dir = _dir.path, wanted = specs();
     _catalogs.addAll(await Isolate.run(() => _loadCatalogs(dir, wanted, bundled)));
     _version++;
+    _shownDay = day;
+  }
+
+  int _shownDay = 0;
+
+  /// Refetches lists past their age and, once the date changes, redraws so the daily shuffle shows.
+  Future<void> keepFresh() async {
+    await refresh();
+    if (_shownDay == day) return;
+    _shownDay = day;
+    notifyListeners();
   }
 
   List<String> specs() => [

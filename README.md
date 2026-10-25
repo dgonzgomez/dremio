@@ -96,6 +96,10 @@ Builds need several GB of temporary space (Gradle and Xcode caches). If a build 
 
 ## What's new
 
+### 0.5.4
+
+- Recommendations stay fresh when the app is left open: catalogs are rechecked when Dremio comes back to the foreground and hourly while idle, and Home picks up the daily reshuffle.
+
 ### 0.5.3
 
 - Mac and Windows: the window opens sized to fit the screen, including with display scaling, so the title bar and its buttons stay reachable.

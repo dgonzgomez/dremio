@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -165,15 +166,31 @@ class _DremioAppState extends State<DremioApp> {
 
   bool _swallowEnter = false;
 
+  /// The TV keeps the app alive for days, so recheck the catalog on resume and hourly while idle.
+  /// Clearing `interacted` lets Home redraw with the new rows; it only does so before the next input.
+  late final AppLifecycleListener _lifecycle;
+  late final Timer _freshTimer;
+
+  void _freshen() {
+    Activity.interacted = false;
+    Catalog.instance.keepFresh();
+  }
+
   @override
   void initState() {
     super.initState();
+    _lifecycle = AppLifecycleListener(onResume: _freshen);
+    _freshTimer = Timer.periodic(const Duration(hours: 1), (_) {
+      if (Activity.idleFor(10 * 60 * 1000)) _freshen();
+    });
     HardwareKeyboard.instance.addHandler(_onKey);
     if (desktop) FocusManager.instance.addEarlyKeyEventHandler(_fullScreenKey);
   }
 
   @override
   void dispose() {
+    _lifecycle.dispose();
+    _freshTimer.cancel();
     HardwareKeyboard.instance.removeHandler(_onKey);
     if (desktop) {
       FocusManager.instance.removeEarlyKeyEventHandler(_fullScreenKey);
