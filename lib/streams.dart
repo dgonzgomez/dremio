@@ -49,7 +49,7 @@ String streamLabel(Map<String, dynamic> s, String quality) {
 int rank(Map<String, dynamic> s, String preferred) {
   final t = _description(s), q = streamQuality(s);
   var n = 0;
-  if (t.contains('⚡') || t.contains('cached')) n += 200;
+  if (t.contains('⚡') || t.contains('cached') || RegExp(r'\[[a-z]{2}\+\]').hasMatch(t)) n += 200;
   if (t.contains('uncached') || t.contains('download')) n -= 800;
   n += q == preferred
       ? (q == '4K' ? 840 : 440)
@@ -73,15 +73,51 @@ int rank(Map<String, dynamic> s, String preferred) {
 
 class NoConnection implements Exception {}
 
-Future<List<StreamChoice>> resolveStreams(String type, String video) async {
-  final manifest = Store.instance.connection;
-  if (manifest.isEmpty) throw NoConnection();
-  final base = manifest.substring(0, manifest.lastIndexOf('/'));
-  final response = await getJson('$base/stream/${Uri.encodeComponent(type)}/${Uri.encodeComponent(video)}.json', timeout: const Duration(seconds: 40));
-  return selectStreams(response is Map ? response['streams'] : null, Store.instance.resolution);
+/// A stream add-on the user can connect with their own (credential-bearing) manifest link.
+class Source {
+  const Source(this.id, this.name, this.hint, this.host);
+  final String id, name, hint;
+
+  /// Required manifest host, or null when the add-on is commonly self-hosted.
+  final String? host;
+
+  bool accepts(String link) {
+    final uri = Uri.tryParse(link.trim());
+    return uri != null && uri.scheme == 'https' && uri.host.isNotEmpty && (host == null || uri.host.toLowerCase() == host) && uri.path.endsWith('/manifest.json') && !uri.hasQuery;
+  }
 }
 
-List<StreamChoice> selectStreams(dynamic streams, String preferred) {
+const sources = [
+  Source('debridio', 'Debridio', 'Paste your Debridio manifest link', 'addon.debridio.com'),
+  Source('torrentio', 'Torrentio', 'Paste your Torrentio link (configured with a debrid service)', 'torrentio.strem.fun'),
+  Source('comet', 'Comet', 'Paste your Comet manifest link (configured with a debrid service)', null),
+];
+
+Source sourceById(String id) => sources.firstWhere((s) => s.id == id, orElse: () => sources.first);
+
+Future<List<StreamChoice>> resolveStreams(String type, String video) async {
+  final order = Store.instance.sourceOrder();
+  if (order.isEmpty) throw NoConnection();
+  Object? failure;
+  for (final id in order) {
+    try {
+      final manifest = Store.instance.sourceLink(id);
+      final base = manifest.substring(0, manifest.lastIndexOf('/'));
+      final response = await getJson('$base/stream/${Uri.encodeComponent(type)}/${Uri.encodeComponent(video)}.json', timeout: const Duration(seconds: 40));
+      final found = selectStreams(response is Map ? response['streams'] : null, Store.instance.resolution, hdr: Store.instance.hdr);
+      if (found.isNotEmpty) return found;
+      failure = null;
+    } catch (e) {
+      failure ??= e;
+    }
+  }
+  if (failure != null) throw failure;
+  return const [];
+}
+
+bool isHdr(Map<String, dynamic> s) => RegExp(r'hdr|dovi|dolby vision|\bdv\b').hasMatch(_description(s));
+
+List<StreamChoice> selectStreams(dynamic streams, String preferred, {bool hdr = true}) {
   final seen = <String>{};
   final choices = <StreamChoice>[];
   for (final raw in streams is List ? streams : const []) {
@@ -91,6 +127,7 @@ List<StreamChoice> selectStreams(dynamic streams, String preferred) {
     final t = _description(stream);
     if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) continue;
     if (t.contains('8k') || (streamQuality(stream) == '4K' && preferred != '4K') || t.contains('dolby vision') || t.contains('dv|')) continue;
+    if (!hdr && isHdr(stream)) continue;
     if (seen.add(uri.toString())) choices.add(StreamChoice(stream, preferred));
   }
   choices.sort((a, b) => b.score.compareTo(a.score));
@@ -152,12 +189,10 @@ Future<String> preflight(StreamChoice choice) async {
   }
 }
 
-Future<void> checkManifest(String link) async {
+Future<void> checkManifest(Source source, String link) async {
   final manifest = await getJson(link);
   if (manifest is! Map || !manifest.containsKey('resources')) throw const HttpException('Not an add-on');
-}
-
-bool validDebridioLink(String link) {
-  final uri = Uri.tryParse(link.trim());
-  return uri != null && uri.scheme == 'https' && uri.host.toLowerCase() == 'addon.debridio.com' && uri.path.endsWith('/manifest.json') && !uri.hasQuery;
+  if (source.host == null && !'${manifest['id']} ${manifest['name']}'.toLowerCase().contains(source.id)) {
+    throw HttpException('Not a ${source.name} add-on');
+  }
 }

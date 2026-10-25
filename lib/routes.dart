@@ -23,7 +23,7 @@ Future<void> openSettings(BuildContext context) =>
 Future<void> play(BuildContext context, Meta m, String video) async {
   if (video.isEmpty) return openDetail(context, m);
   final store = Store.instance;
-  if (store.connection.isEmpty) return openSettings(context);
+  if (!store.hasSource) return openSettings(context);
   store.remember(m);
   store.learn(m);
   await navigatorKey.currentState!.push(

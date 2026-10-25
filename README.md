@@ -96,6 +96,11 @@ Builds need several GB of temporary space (Gradle and Xcode caches). If a build 
 
 ## What's new
 
+### 0.5.0
+
+- Multiple sources: connect Debridio, Torrentio and Comet in Settings and choose which one is the default. Other connected sources are tried when the default has nothing playable.
+- HDR setting under Resolution: turn it off to skip HDR and Dolby Vision streams.
+
 ### 0.4.0
 
 - Resolved Fire TV bug fixes: remote navigation back to the top of the screen and through the player controls, plus faster artwork loading with less memory use.

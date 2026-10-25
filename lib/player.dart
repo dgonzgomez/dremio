@@ -182,9 +182,9 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
         _start();
       }
     } on NoConnection {
-      _fail('Connect Debridio in Settings.');
+      _fail('Connect a source in Settings.');
     } catch (_) {
-      _fail('Couldn’t reach Debridio.');
+      _fail('Couldn’t reach ${sourceById(store.defaultSource).name}.');
     }
   }
 

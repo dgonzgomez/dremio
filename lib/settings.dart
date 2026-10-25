@@ -17,7 +17,8 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   final store = Store.instance;
   final link = TextEditingController();
-  bool editing = false, checking = false, updating = false;
+  bool checking = false, updating = false;
+  String? editing;
   String feedback = '', version = '', updateStatus = '';
   Release? available;
   double? progress;
@@ -25,7 +26,7 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   void initState() {
     super.initState();
-    editing = store.connection.isEmpty;
+    if (!store.hasSource) editing = sources.first.id;
     currentVersion().then((v) {
       if (mounted) setState(() => version = v);
     });
@@ -96,9 +97,16 @@ class _SettingsPageState extends State<SettingsPage> {
     super.dispose();
   }
 
-  Future<void> save() async {
+  void edit(String? id) => setState(() {
+    editing = id;
+    feedback = '';
+    link.clear();
+  });
+
+  Future<void> save(Source source) async {
     final value = link.text.trim();
-    if (!validDebridioLink(value)) {      setState(() => feedback = 'Invalid link.');
+    if (!source.accepts(value)) {
+      setState(() => feedback = 'That isn’t a ${source.name} manifest link.');
       return;
     }
     setState(() {
@@ -106,15 +114,13 @@ class _SettingsPageState extends State<SettingsPage> {
       feedback = 'Checking…';
     });
     try {
-      await checkManifest(value);
-      await store.saveConnection(value);      if (!mounted) return;
-      setState(() {
-        editing = false;
-        checking = false;
-        feedback = '';
-        link.clear();
-      });
-    } catch (_) {      if (mounted) {
+      await checkManifest(source, value);
+      await store.saveSource(source.id, value);
+      if (!mounted) return;
+      checking = false;
+      edit(null);
+    } catch (_) {
+      if (mounted) {
         setState(() {
           checking = false;
           feedback = 'Couldn’t connect.';
@@ -143,73 +149,112 @@ class _SettingsPageState extends State<SettingsPage> {
       ) ??
       false;
 
+  List<Widget> _source(Source source) {
+    final connected = store.connected(source.id), isDefault = connected && store.defaultSource == source.id;
+    return [
+      const SizedBox(height: 18),
+      Text(
+        '${source.name}  ·  ${!connected
+            ? 'not connected'
+            : isDefault
+            ? 'connected, default'
+            : 'connected'}',
+        style: text(15, color: isDefault ? green : white),
+      ),
+      const SizedBox(height: 10),
+      if (editing == source.id) ...[
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760),
+          child: Container(
+            height: 54,
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            decoration: BoxDecoration(color: const Color(0xff1b2b20), borderRadius: BorderRadius.circular(14)),
+            alignment: Alignment.centerLeft,
+            child: TextField(
+              controller: link,
+              autofocus: true,
+              obscureText: true,
+              cursorColor: green,
+              style: text(14),
+              decoration: InputDecoration.collapsed(
+                hintText: source.hint,
+                hintStyle: text(14, color: muted),
+              ),
+              onSubmitted: (_) => save(source),
+            ),
+          ),
+        ),
+        if (feedback.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Text(feedback, style: text(13, color: muted)),
+          ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Pill(label: 'Save', primary: true, height: 42, onTap: checking ? () {} : () => save(source)),
+            if (store.hasSource) ...[const SizedBox(width: 12), Pill(label: 'Cancel', height: 42, onTap: () => edit(null))],
+          ],
+        ),
+      ] else
+        Row(
+          children: [
+            if (!connected)
+              Pill(label: 'Connect', height: 42, onTap: () => edit(source.id))
+            else ...[
+              Pill(label: isDefault ? 'Default' : 'Make default', primary: isDefault, height: 42, onTap: () => setState(() => store.defaultSource = source.id)),
+              const SizedBox(width: 12),
+              Pill(label: 'Replace', height: 42, onTap: () => edit(source.id)),
+              const SizedBox(width: 12),
+              Pill(
+                label: 'Remove',
+                height: 42,
+                onTap: () async {
+                  if (await confirm('Remove ${source.name}?', 'Remove')) {
+                    await store.clearSource(source.id);
+                    if (mounted) edit(store.hasSource ? null : sources.first.id);
+                  }
+                },
+              ),
+            ],
+          ],
+        ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
-    final connected = store.connection.isNotEmpty;
     return Screen(
       child: ListView(
         padding: EdgeInsets.fromLTRB(gutter(context), 110, gutter(context), 60),
         children: [
           Text('Settings', style: text(34, weight: FontWeight.w500)),
           const SizedBox(height: 26),
-          Text(connected ? 'Debridio connected' : 'Debridio not connected', style: text(15, color: muted)),
-          const SizedBox(height: 14),
-          if (editing) ...[
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 760),
-              child: Container(
-                height: 54,
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                decoration: BoxDecoration(color: const Color(0xff1b2b20), borderRadius: BorderRadius.circular(14)),
-                alignment: Alignment.centerLeft,
-                child: TextField(
-                  controller: link,
-                  autofocus: true,
-                  obscureText: true,
-                  cursorColor: green,
-                  style: text(14),
-                  decoration: InputDecoration.collapsed(
-                    hintText: 'Paste your Debridio manifest link',
-                    hintStyle: text(14, color: muted),
-                  ),
-                  onSubmitted: (_) => save(),
-                ),
-              ),
-            ),
-            if (feedback.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: Text(feedback, style: text(13, color: muted)),
-              ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Pill(label: 'Save connection', primary: true, onTap: checking ? () {} : save),
-                if (connected) ...[const SizedBox(width: 14), Pill(label: 'Cancel', onTap: () => setState(() => editing = false))],
-              ],
-            ),
-          ] else
-            Row(
-              children: [
-                Pill(label: 'Replace connection', primary: true, onTap: () => setState(() => editing = true)),
-                const SizedBox(width: 14),
-                Pill(
-                  label: 'Disconnect',
-                  onTap: () async {
-                    if (await confirm('Disconnect Debridio?', 'Disconnect')) {
-                      await store.clearConnection();
-                      setState(() => editing = true);
-                    }
-                  },
-                ),
-              ],
-            ),
+          Text('Sources', style: text(13, color: muted)),
+          for (final source in sources) ..._source(source),
           const SizedBox(height: 34),
           Text('Resolution', style: text(13, color: muted)),
           const SizedBox(height: 10),
           Row(
             children: [
-              for (final q in ['4K', '1080p', '720p', '480p']) ...[Pill(label: q, primary: store.resolution == q, height: 42, onTap: () => setState(() => store.resolution = q)), const SizedBox(width: 12)],
+              for (final q in ['4K', '1080p', '720p', '480p']) ...[
+                Pill(label: q, primary: store.resolution == q, height: 42, onTap: () => setState(() => store.resolution = q)),
+                const SizedBox(width: 12),
+              ],
+            ],
+          ),
+          const SizedBox(height: 34),
+          Text('HDR', style: text(13, color: muted)),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Pill(label: 'On', primary: store.hdr, height: 42, onTap: () => setState(() => store.hdr = true)),
+              const SizedBox(width: 12),
+              Pill(label: 'Off', primary: !store.hdr, height: 42, onTap: () => setState(() => store.hdr = false)),
+              const SizedBox(width: 16),
+              Flexible(
+                child: Text(store.hdr ? 'HDR sources are allowed.' : 'HDR sources are skipped.', style: text(13, color: muted)),
+              ),
             ],
           ),
           const SizedBox(height: 34),

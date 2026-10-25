@@ -13,40 +13,66 @@ class Store {
   Store._(this._prefs);
   final SharedPreferences _prefs;
   static late Store instance;
-  static const _secure = FlutterSecureStorage(
-    mOptions: MacOsOptions(usesDataProtectionKeychain: false),
-  );
-  String _connection = '';
+  static const _secure = FlutterSecureStorage(mOptions: MacOsOptions(usesDataProtectionKeychain: false));
+  static const sourceIds = ['debridio', 'torrentio', 'comet'];
+  final _sources = <String, String>{};
   final playbackChanges = ValueNotifier<int>(0);
   final _metaCache = <String, Meta>{};
 
   static Future<void> open() async {
     instance = Store._(await SharedPreferences.getInstance());
-    try {
-      instance._connection = await _secure.read(key: 'debridio') ?? '';
-    } catch (_) {}
+    for (final id in sourceIds) {
+      try {
+        final link = await _secure.read(key: _secureKey(id)) ?? '';
+        if (link.isNotEmpty) instance._sources[id] = link;
+      } catch (_) {}
+    }
   }
+
+  /// Debridio keeps its original key so existing installs stay connected.
+  static String _secureKey(String id) => id == 'debridio' ? id : 'source:$id';
 
   int now() => DateTime.now().millisecondsSinceEpoch;
   int getInt(String key, [int fallback = 0]) => _prefs.getInt(key) ?? fallback;
   void setInt(String key, int value) => _prefs.setInt(key, value);
-  String getString(String key, [String fallback = '']) =>
-      _prefs.getString(key) ?? fallback;
+  String getString(String key, [String fallback = '']) => _prefs.getString(key) ?? fallback;
   void setString(String key, String value) => _prefs.setString(key, value);
   bool getBool(String key) => _prefs.getBool(key) ?? false;
 
   String get resolution => getString('preferredResolution', '1080p');
   set resolution(String value) => setString('preferredResolution', value);
 
-  String get connection => _connection;
-  Future<void> saveConnection(String link) async {
-    await _secure.write(key: 'debridio', value: link);
-    _connection = link;
+  bool get hdr => _prefs.getBool('hdr') ?? true;
+  set hdr(bool value) => _prefs.setBool('hdr', value);
+
+  bool get hasSource => _sources.isNotEmpty;
+  bool connected(String id) => _sources.containsKey(id);
+  String sourceLink(String id) => _sources[id] ?? '';
+
+  /// The source tried first; falls back to any connected one.
+  String get defaultSource {
+    final chosen = getString('defaultSource');
+    if (connected(chosen)) return chosen;
+    return sourceIds.firstWhere(connected, orElse: () => '');
   }
 
-  Future<void> clearConnection() async {
-    await _secure.delete(key: 'debridio');
-    _connection = '';
+  set defaultSource(String id) => setString('defaultSource', id);
+
+  /// Connected sources, default first.
+  List<String> sourceOrder() {
+    final first = defaultSource;
+    return [if (first.isNotEmpty) first, ...sourceIds.where((id) => id != first && connected(id))];
+  }
+
+  Future<void> saveSource(String id, String link) async {
+    await _secure.write(key: _secureKey(id), value: link);
+    _sources[id] = link;
+    if (_sources.length == 1) defaultSource = id;
+  }
+
+  Future<void> clearSource(String id) async {
+    await _secure.delete(key: _secureKey(id));
+    _sources.remove(id);
   }
 
   bool saved(Meta m) => getBool('saved:${m['id']}');
@@ -57,10 +83,7 @@ class Store {
     _prefs.setBool('saved:${m['id']}', add);
     remember(m);
     for (final g in genres(m)) {
-      setInt(
-        'genre:$g',
-        (getInt('genre:$g') + (add ? 1 : -1)).clamp(0, 1 << 30),
-      );
+      setInt('genre:$g', (getInt('genre:$g') + (add ? 1 : -1)).clamp(0, 1 << 30));
     }
   }
 
@@ -84,8 +107,7 @@ class Store {
 
   WatchProgress progress(Meta meta, {String? video}) {
     final id = str(meta, 'id');
-    final current =
-        video ?? getString('video:$id', str(meta, 'type') == 'movie' ? id : '');
+    final current = video ?? getString('video:$id', str(meta, 'type') == 'movie' ? id : '');
     Map<String, dynamic>? episode;
     for (final source in [meta, recalled(id)]) {
       final videos = source?['videos'];
@@ -107,12 +129,7 @@ class Store {
         }
       } catch (_) {}
     }
-    return WatchProgress(
-      videoId: current,
-      positionMs: getInt('position:$current'),
-      durationMs: getInt('duration:$current'),
-      episode: episode,
-    );
+    return WatchProgress(videoId: current, positionMs: getInt('position:$current'), durationMs: getInt('duration:$current'), episode: episode);
   }
 
   void recordPlayback(Meta meta, String video) {
@@ -151,11 +168,7 @@ class Store {
 
   int affinity(Meta m) => genres(m).fold(0, (n, g) => n + getInt('genre:$g'));
 
-  List<String> savedIds() => _prefs
-      .getKeys()
-      .where((k) => k.startsWith('saved:') && getBool(k))
-      .map((k) => k.substring(6))
-      .toList();
+  List<String> savedIds() => _prefs.getKeys().where((k) => k.startsWith('saved:') && getBool(k)).map((k) => k.substring(6)).toList();
 
   List<String> keys() => _prefs.getKeys().toList();
 
