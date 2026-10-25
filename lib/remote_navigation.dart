@@ -259,15 +259,48 @@ class _RemoteSliderKeysState extends State<RemoteSliderKeys> {
       }
       return KeyEventResult.ignored;
     },
-    child: AnimatedContainer(
-      duration: const Duration(milliseconds: 160),
-      decoration: BoxDecoration(
-        color: focused ? const Color(0x20bdff59) : Colors.transparent,
-        borderRadius: BorderRadius.circular(22),
-      ),
+    child: SliderTheme(
+      data: SliderTheme.of(context).copyWith(thumbShape: _FocusThumb(focused)),
       child: ExcludeFocus(child: widget.child),
     ),
   );
+}
+
+/// Only the thumb shows remote focus: it grows and gains a halo.
+class _FocusThumb extends SliderComponentShape {
+  const _FocusThumb(this.focused);
+  final bool focused;
+
+  @override
+  Size getPreferredSize(bool isEnabled, bool isDiscrete) =>
+      const Size.fromRadius(14);
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset center, {
+    required Animation<double> activationAnimation,
+    required Animation<double> enableAnimation,
+    required bool isDiscrete,
+    required TextPainter labelPainter,
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required TextDirection textDirection,
+    required double value,
+    required double textScaleFactor,
+    required Size sizeWithOverflow,
+  }) {
+    final canvas = context.canvas,
+        color = sliderTheme.thumbColor ?? Colors.white;
+    if (focused) {
+      canvas.drawCircle(
+        center,
+        14,
+        Paint()..color = color.withValues(alpha: .3),
+      );
+    }
+    canvas.drawCircle(center, focused ? 8 : 6, Paint()..color = color);
+  }
 }
 
 /// Detail pages have variable-height episode/cast sections. Keep their hero and

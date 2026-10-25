@@ -96,6 +96,11 @@ Builds need several GB of temporary space (Gradle and Xcode caches). If a build 
 
 ## What's new
 
+### 0.5.1
+
+- Settings: navigating back up from the bottom of the page reaches the top again.
+- Player: only the progress bar's dot highlights when it's selected.
+
 ### 0.5.0
 
 - Multiple sources: connect Debridio, Torrentio and Comet in Settings and choose which one is the default. Other connected sources are tried when the default has nothing playable.

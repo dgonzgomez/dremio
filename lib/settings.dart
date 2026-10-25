@@ -225,78 +225,81 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     return Screen(
-      child: ListView(
+      child: SingleChildScrollView(
         padding: EdgeInsets.fromLTRB(gutter(context), 110, gutter(context), 60),
-        children: [
-          Text('Settings', style: text(34, weight: FontWeight.w500)),
-          const SizedBox(height: 26),
-          Text('Sources', style: text(13, color: muted)),
-          for (final source in sources) ..._source(source),
-          const SizedBox(height: 34),
-          Text('Resolution', style: text(13, color: muted)),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              for (final q in ['4K', '1080p', '720p', '480p']) ...[
-                Pill(label: q, primary: store.resolution == q, height: 42, onTap: () => setState(() => store.resolution = q)),
-                const SizedBox(width: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Settings', style: text(34, weight: FontWeight.w500)),
+            const SizedBox(height: 26),
+            Text('Sources', style: text(13, color: muted)),
+            for (final source in sources) ..._source(source),
+            const SizedBox(height: 34),
+            Text('Resolution', style: text(13, color: muted)),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                for (final q in ['4K', '1080p', '720p', '480p']) ...[
+                  Pill(label: q, primary: store.resolution == q, height: 42, onTap: () => setState(() => store.resolution = q)),
+                  const SizedBox(width: 12),
+                ],
               ],
-            ],
-          ),
-          const SizedBox(height: 34),
-          Text('HDR', style: text(13, color: muted)),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Pill(label: 'On', primary: store.hdr, height: 42, onTap: () => setState(() => store.hdr = true)),
-              const SizedBox(width: 12),
-              Pill(label: 'Off', primary: !store.hdr, height: 42, onTap: () => setState(() => store.hdr = false)),
-              const SizedBox(width: 16),
-              Flexible(
-                child: Text(store.hdr ? 'HDR sources are allowed.' : 'HDR sources are skipped.', style: text(13, color: muted)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 34),
-          Text(version.isEmpty ? 'Updates' : 'Updates  ·  version $version', style: text(13, color: muted)),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              if (available case final release?)
-                Pill(label: 'Update to ${release.version}', primary: true, onTap: updating ? () {} : () => applyUpdate(release))
-              else
-                Pill(label: 'Check for updates', onTap: updating ? () {} : checkForUpdate),
-              if (updateStatus.isNotEmpty) ...[
+            ),
+            const SizedBox(height: 34),
+            Text('HDR', style: text(13, color: muted)),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Pill(label: 'On', primary: store.hdr, height: 42, onTap: () => setState(() => store.hdr = true)),
+                const SizedBox(width: 12),
+                Pill(label: 'Off', primary: !store.hdr, height: 42, onTap: () => setState(() => store.hdr = false)),
                 const SizedBox(width: 16),
                 Flexible(
-                  child: Text(updateStatus, style: text(13, color: muted)),
+                  child: Text(store.hdr ? 'HDR sources are allowed.' : 'HDR sources are skipped.', style: text(13, color: muted)),
                 ),
               ],
-            ],
-          ),
-          if (progress != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 14),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 360),
-                child: LinearProgressIndicator(value: progress, minHeight: 4, color: green, backgroundColor: const Color(0x40f4f8f1), borderRadius: BorderRadius.circular(2)),
+            ),
+            const SizedBox(height: 34),
+            Text(version.isEmpty ? 'Updates' : 'Updates  ·  version $version', style: text(13, color: muted)),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                if (available case final release?)
+                  Pill(label: 'Update to ${release.version}', primary: true, onTap: updating ? () {} : () => applyUpdate(release))
+                else
+                  Pill(label: 'Check for updates', onTap: updating ? () {} : checkForUpdate),
+                if (updateStatus.isNotEmpty) ...[
+                  const SizedBox(width: 16),
+                  Flexible(
+                    child: Text(updateStatus, style: text(13, color: muted)),
+                  ),
+                ],
+              ],
+            ),
+            if (progress != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 14),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 360),
+                  child: LinearProgressIndicator(value: progress, minHeight: 4, color: green, backgroundColor: const Color(0x40f4f8f1), borderRadius: BorderRadius.circular(2)),
+                ),
+              ),
+            const SizedBox(height: 34),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Pill(
+                label: 'Reset my list',
+                onTap: () async {
+                  if (await confirm('Reset your list and preferences?', 'Reset')) {
+                    await store.reset();
+                    currentPage.value = 'Home';
+                    navigatorKey.currentState?.popUntil((r) => r.isFirst);
+                  }
+                },
               ),
             ),
-          const SizedBox(height: 34),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Pill(
-              label: 'Reset my list',
-              onTap: () async {
-                if (await confirm('Reset your list and preferences?', 'Reset')) {
-                  await store.reset();
-                  currentPage.value = 'Home';
-                  navigatorKey.currentState?.popUntil((r) => r.isFirst);
-                }
-              },
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
