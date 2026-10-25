@@ -96,6 +96,14 @@ Builds need several GB of temporary space (Gradle and Xcode caches). If a build 
 
 ## What's new
 
+### 0.6.1
+
+- Fire TV: the left sidebar replaces the top bar. Press Left from the start of a row to open it; Lookback works with the remote too.
+- Player: a "Buffering…" spinner shows while a big file is still loading.
+- Data Saver (Settings, under HDR): prefers files under 7 GB so playback starts faster, using bigger ones only when nothing smaller plays.
+- Android updates: the download is checked for completeness and the right signing key before installing, with a clear message if something's wrong.
+- Windows updates: Dremio only closes once the updater has actually started, so a blocked updater no longer leaves it closed. Unpacking is faster too.
+
 ### 0.6.0
 
 - Mac and Windows: a new left sidebar with the logo at the top, the tabs in the middle and Settings at the bottom. It slides out on hover, and hovering an item shines a UFO-style spotlight on it.
