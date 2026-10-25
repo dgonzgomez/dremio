@@ -47,7 +47,17 @@ For a quick development run: `flutter run -d windows`.
 
 ### Without a Windows PC
 
-`.github/workflows/desktop.yml` builds both the Windows zip and the Mac zip on GitHub's servers whenever `main` is pushed (or from **Actions → Desktop builds → Run workflow**). Download them from the run's **Artifacts** section.
+`.github/workflows/release.yml` builds the Windows zip, the Mac zip and the Android APK on GitHub's servers whenever `main` is pushed (or from **Actions → Release → Run workflow**). Download them from the run's **Artifacts** section.
+
+## Releases
+
+Releases publish themselves. When `main` is pushed with a `version` in `pubspec.yaml` that has no release yet, the workflow creates release `v<version>` with all three downloads attached, using that version's section under **What's new** below as the release notes. To ship a release:
+
+1. Bump `version` in `pubspec.yaml` (for example `0.4.0+4` to `0.5.0+5`).
+2. Add a `### 0.5.0` section under **What's new**.
+3. Push to `main`.
+
+The Android APK is only attached when the repository has an `ANDROID_DEBUG_KEYSTORE` secret (the base64 of `~/.android/debug.keystore` from the computer that built the copy already on the TV). Without the same key, the in-app update can't replace the installed app.
 
 ## Android / Fire TV
 
@@ -61,7 +71,7 @@ Output: `build/app/outputs/flutter-apk/app-release.apk`.
 
 `android-arm` targets 32-bit ARM, which is what Fire TV Sticks and most TVs run, and keeps the APK smaller. For phones or newer 64-bit devices, drop `--target-platform` to build one APK that runs everywhere.
 
-The app installs as **Dremio Beta** (`dev.dremio.flutter`), so it sits alongside the older Java Dremio rather than replacing it.
+The app installs as **Dremio** (`dev.dremio.flutter`).
 
 ### Installing on a Fire TV
 
@@ -74,7 +84,7 @@ The app installs as **Dremio Beta** (`dev.dremio.flutter`), so it sits alongside
    adb install -r build/app/outputs/flutter-apk/app-release.apk
    ```
 
-   Approve the debugging prompt on the TV the first time. **Dremio Beta** then appears in Apps.
+   Approve the debugging prompt on the TV the first time. **Dremio** then appears in Apps.
 
 ### Signing
 
@@ -83,3 +93,15 @@ Release APKs are currently signed with the Android debug key. That's fine for si
 ## Low disk space
 
 Builds need several GB of temporary space (Gradle and Xcode caches). If a build fails with "Insufficient space" or "No space left on device", `flutter clean` clears this project's build output.
+
+## What's new
+
+### 0.4.0
+
+- Resolved Fire TV bug fixes: remote navigation back to the top of the screen and through the player controls, plus faster artwork loading with less memory use.
+- Implemented an episode view: Continue Watching shows each show's current episode and progress, and opens straight to that episode.
+
+### 0.3.0
+
+- Update button in Settings that checks GitHub releases and installs the new version.
+- Volume slider, scroll-wheel volume, online subtitles when a source has none.

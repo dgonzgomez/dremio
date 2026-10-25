@@ -92,7 +92,7 @@ class Catalog extends ChangeNotifier {
         try {
           final metas = _lean(await _fetch(spec));
           if (metas.isEmpty) continue;
-          _file(spec).writeAsStringSync(jsonEncode({'metas': metas}));
+          await _file(spec).writeAsString(jsonEncode({'metas': metas}));
           _catalogs[spec] = metas;
           changed = true;
         } catch (e) {

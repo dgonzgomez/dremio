@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'artwork_cache.dart';
 import 'catalog.dart';
+import 'remote_navigation.dart';
 import 'main.dart';
 import 'routes.dart';
 import 'store.dart';
@@ -23,7 +25,9 @@ class Shell extends StatelessWidget {
         if (!didPop) currentPage.value = 'Home';
       },
       child: Screen(
-        child: page == 'My List' ? const LibraryView() : BrowseView(key: ValueKey(page), page: page),
+        child: page == 'My List'
+            ? const LibraryView()
+            : BrowseView(key: ValueKey(page), page: page),
       ),
     ),
   );
@@ -61,9 +65,19 @@ class NavBar extends StatelessWidget {
     final mac = Platform.isMacOS;
     final bar = Container(
       height: 124,
-      padding: EdgeInsets.fromLTRB(mac ? 92 : gutter(context), mac ? 18 : 14, gutter(context), 0),
+      padding: EdgeInsets.fromLTRB(
+        mac ? 92 : gutter(context),
+        mac ? 18 : 14,
+        gutter(context),
+        0,
+      ),
       decoration: const BoxDecoration(
-        gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, stops: [0, 0.55, 1], colors: [Color(0xf5070c09), Color(0xd9070c09), Color(0x00070c09)]),
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          stops: [0, 0.55, 1],
+          colors: [Color(0xf5070c09), Color(0xd9070c09), Color(0x00070c09)],
+        ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -74,7 +88,15 @@ class NavBar extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (Navigator.of(context).canPop()) ...[Pill(icon: Icons.arrow_back_rounded, tooltip: 'Back  (Esc)', height: 40, onTap: goBack), const SizedBox(width: 18)],
+                  if (Navigator.of(context).canPop()) ...[
+                    Pill(
+                      icon: Icons.arrow_back_rounded,
+                      tooltip: 'Back  (Esc)',
+                      height: 40,
+                      onTap: goBack,
+                    ),
+                    const SizedBox(width: 18),
+                  ],
                   GestureDetector(
                     onTap: () => _tab(context, 'Home'),
                     child: Row(
@@ -82,7 +104,10 @@ class NavBar extends StatelessWidget {
                       children: [
                         const Logo(size: 27),
                         const SizedBox(width: 9),
-                        Text('dremio', style: text(24, weight: FontWeight.w500, spacing: -1)),
+                        Text(
+                          'dremio',
+                          style: text(24, weight: FontWeight.w500, spacing: -1),
+                        ),
                       ],
                     ),
                   ),
@@ -115,10 +140,21 @@ class NavBar extends StatelessWidget {
                             height: 36,
                             padding: const EdgeInsets.symmetric(horizontal: 20),
                             alignment: Alignment.center,
-                            decoration: BoxDecoration(color: active ? white : (selected ? green : Colors.transparent), borderRadius: BorderRadius.circular(21)),
+                            decoration: BoxDecoration(
+                              color: active
+                                  ? white
+                                  : (selected ? green : Colors.transparent),
+                              borderRadius: BorderRadius.circular(21),
+                            ),
                             child: Text(
                               tab,
-                              style: text(13, weight: FontWeight.w500, color: active || selected ? ink : const Color(0xffb9c5ba)),
+                              style: text(
+                                13,
+                                weight: FontWeight.w500,
+                                color: active || selected
+                                    ? ink
+                                    : const Color(0xffb9c5ba),
+                              ),
                             ),
                           );
                         },
@@ -134,9 +170,19 @@ class NavBar extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Pill(icon: Icons.search, tooltip: 'Search  (⌘F)', height: 40, onTap: () => openSearch(context)),
+                  Pill(
+                    icon: Icons.search,
+                    tooltip: 'Search  (⌘F)',
+                    height: 40,
+                    onTap: () => openSearch(context),
+                  ),
                   const SizedBox(width: 10),
-                  Pill(icon: Icons.settings_outlined, tooltip: 'Settings', height: 40, onTap: () => openSettings(context)),
+                  Pill(
+                    icon: Icons.settings_outlined,
+                    tooltip: 'Settings',
+                    height: 40,
+                    onTap: () => openSettings(context),
+                  ),
                 ],
               ),
             ),
@@ -157,8 +203,6 @@ class BrowseView extends StatefulWidget {
 
 class _BrowseViewState extends State<BrowseView> {
   final catalog = Catalog.instance;
-  final scroll = ScrollController();
-  final rowNodes = <FocusNode>[];
 
   @override
   void initState() {
@@ -169,43 +213,7 @@ class _BrowseViewState extends State<BrowseView> {
   @override
   void dispose() {
     catalog.removeListener(_changed);
-    scroll.dispose();
-    for (final n in rowNodes) {
-      n.dispose();
-    }
     super.dispose();
-  }
-
-  FocusNode _row(int i) {
-    while (rowNodes.length <= i) {
-      rowNodes.add(FocusNode(skipTraversal: true, canRequestFocus: false));
-    }
-    return rowNodes[i];
-  }
-
-  /// Up and down step a whole row at a time and keep it clear of the top bar; the default traversal can lose
-  /// the hero once the lazy list has dropped it, and tucks rows under the bar.
-  KeyEventResult _step(FocusNode _, KeyEvent e) {
-    final up = e.logicalKey == LogicalKeyboardKey.arrowUp;
-    if (e is KeyUpEvent || (!up && e.logicalKey != LogicalKeyboardKey.arrowDown)) return KeyEventResult.ignored;
-    final primary = FocusManager.instance.primaryFocus;
-    final from = primary == null ? -1 : rowNodes.indexWhere(primary.ancestors.contains);
-    if (from < 0) return KeyEventResult.ignored;
-    final x = primary!.rect.center.dx, width = MediaQuery.sizeOf(context).width;
-    for (var i = from + (up ? -1 : 1); i >= 0 && i < rowNodes.length; i += up ? -1 : 1) {
-      final row = rowNodes[i];
-      final targets = row.traversalDescendants.where((n) => n.context != null && n.rect.right > 0 && n.rect.left < width).toList();
-      if (targets.isEmpty) continue;
-      if (i > 0) targets.sort((a, b) => (a.rect.center.dx - x).abs().compareTo((b.rect.center.dx - x).abs()));
-      targets.first.requestFocus();
-      if (i == 0) {
-        scroll.animateTo(0, duration: const Duration(milliseconds: 320), curve: Curves.easeOutCubic);
-      } else {
-        Scrollable.ensureVisible(row.context!, alignment: .3, duration: const Duration(milliseconds: 260), curve: Curves.easeOutCubic);
-      }
-      return KeyEventResult.handled;
-    }
-    return up ? KeyEventResult.ignored : KeyEventResult.handled;
   }
 
   void _changed() {
@@ -228,7 +236,12 @@ class _BrowseViewState extends State<BrowseView> {
           children: [
             Text('Couldn’t load the catalog.', style: text(16, color: muted)),
             const SizedBox(height: 20),
-            Pill(label: 'Try again', primary: true, onTap: () => catalog.refresh(force: true).then((_) => setState(() {}))),
+            Pill(
+              label: 'Try again',
+              primary: true,
+              onTap: () =>
+                  catalog.refresh(force: true).then((_) => setState(() {})),
+            ),
           ],
         ),
       );
@@ -236,50 +249,114 @@ class _BrowseViewState extends State<BrowseView> {
     final heroes = catalog.heroes(type);
     if (heroes.isEmpty) heroes.add(pool.first);
     final lead = heroes.map((m) => str(m, 'id')).toSet();
-    final recommended = catalog.ranked(pool, 'picks${widget.page}').where((m) => !lead.contains(str(m, 'id'))).toList();
+    final recommended = catalog
+        .ranked(pool, 'picks${widget.page}')
+        .where((m) => !lead.contains(str(m, 'id')))
+        .toList();
     final fresh = '/year/genre=${catalog.year}';
     final c = catalog.catalog;
     final mix = Catalog.mix;
     final decent = Catalog.decent;
-    void open(Meta m) => openDetail(context, m);
-    Widget shelf(String title, List<Meta> items, {bool filter = true}) => Shelf(title: title, items: items, onOpen: open, filter: filter);
+    Future<void> open(Meta m) async {
+      await openDetail(context, m);
+      if (mounted) setState(() {});
+    }
+
+    Widget shelf(
+      String title,
+      List<Meta> items, {
+      bool filter = true,
+      bool continueWatching = false,
+    }) {
+      final visible = (filter ? catalog.playable(items) : items)
+          .take(20)
+          .toList();
+      return visible.isEmpty
+          ? const SizedBox.shrink()
+          : Shelf(
+              title: title,
+              items: visible,
+              filter: false,
+              continueWatching: continueWatching,
+              onOpen: continueWatching
+                  ? (m) async {
+                      await openDetail(
+                        context,
+                        m,
+                        resumeVideo: Store.instance.progress(m).videoId,
+                      );
+                      if (mounted) setState(() {});
+                    }
+                  : open,
+            );
+    }
 
     final rows = <Widget>[
-      if (type == null) shelf('Continue Watching', catalog.continueWatching(), filter: false),
+      if (type == null)
+        shelf(
+          'Continue Watching',
+          catalog.continueWatching(),
+          filter: false,
+          continueWatching: true,
+        ),
       shelf(type == null ? 'Recommended for You' : 'Recommended', recommended),
       if (type == null) ...[
-        shelf('Trending Today', decent(mix(c('movie/x-trending'), c('series/x-trending')))),
+        shelf(
+          'Trending Today',
+          decent(mix(c('movie/x-trending'), c('series/x-trending'))),
+        ),
         shelf('Popular Movies', c('movie/top')),
         shelf('Popular Series', c('series/top')),
         shelf('This Week', mix(c('movie/x-week'), c('series/x-week'))),
         shelf('New Releases', mix(c('movie$fresh'), c('series$fresh'))),
-        shelf('Fresh Picks', decent(mix(c('movie/x-fresh'), c('series/x-fresh')))),
+        shelf(
+          'Fresh Picks',
+          decent(mix(c('movie/x-fresh'), c('series/x-fresh'))),
+        ),
         shelf('Top Rated', mix(c('movie/imdbRating'), c('series/imdbRating'))),
-        for (final s in services) shelf('On ${s[1]}', decent(mix(c('movie/x-${s[0]}'), c('series/x-${s[0]}')))),
+        for (final s in services)
+          shelf(
+            'On ${s[1]}',
+            decent(mix(c('movie/x-${s[0]}'), c('series/x-${s[0]}'))),
+          ),
       ] else ...[
         shelf('Trending Today', decent(c('$type/x-trending'))),
         shelf('Popular Now', c('$type/top')),
-        shelf(type == 'movie' ? 'Most Watched This Week' : 'Popular This Week', c('$type/x-week')),
+        shelf(
+          type == 'movie' ? 'Most Watched This Week' : 'Popular This Week',
+          c('$type/x-week'),
+        ),
         shelf('New Releases', c('$type$fresh')),
-        shelf(type == 'movie' ? 'Certified Fresh' : 'Best New Shows', decent(c('$type/x-fresh'))),
+        shelf(
+          type == 'movie' ? 'Certified Fresh' : 'Best New Shows',
+          decent(c('$type/x-fresh')),
+        ),
         shelf('Top Rated', c('$type/imdbRating')),
-        for (final s in services) shelf('On ${s[1]}', decent(c('$type/x-${s[0]}'))),
+        for (final s in services)
+          shelf('On ${s[1]}', decent(c('$type/x-${s[0]}'))),
       ],
-      for (final g in catalog.genreRows(type, type == null ? 2 : 4)) shelf(g, type == null ? mix(c('movie/top/genre=$g'), c('series/top/genre=$g')) : c('$type/top/genre=$g')),
+      for (final g in catalog.genreRows(type, type == null ? 2 : 4))
+        shelf(
+          g,
+          type == null
+              ? mix(c('movie/top/genre=$g'), c('series/top/genre=$g'))
+              : c('$type/top/genre=$g'),
+        ),
       const SizedBox(height: 60),
     ];
 
-    final children = [HeroBanner(items: heroes, key: ValueKey('hero${widget.page}')), ...rows];
-    return Focus(
-      canRequestFocus: false,
-      skipTraversal: true,
-      onKeyEvent: _step,
-      child: ListView(
-        controller: scroll,
-        padding: EdgeInsets.zero,
-        cacheExtent: 600,
-        children: [for (var i = 0; i < children.length; i++) Focus(focusNode: _row(i), child: children[i])],
-      ),
+    return RemoteBrowseList(
+      hero: HeroBanner(items: heroes, key: ValueKey('hero${widget.page}')),
+      shelves: rows.whereType<Shelf>().toList(),
+      shelfExtras: rows
+          .whereType<Shelf>()
+          .map((row) => row.continueWatching ? 20.0 : 0.0)
+          .toList(),
+      heroExtent: (MediaQuery.sizeOf(context).height * .64).clamp(440.0, 720.0),
+      shelfExtent:
+          posterWidth(context) * 1.48 +
+          94 +
+          MediaQuery.textScalerOf(context).scale(20) * 1.3,
     );
   }
 }
@@ -308,7 +385,10 @@ class _LibraryViewState extends State<LibraryView> {
             child: Text('Nothing saved yet.', style: text(16, color: muted)),
           )
         else
-          PosterGrid(items: list, onOpen: (m) => openDetail(context, m).then((_) => setState(() {}))),
+          PosterGrid(
+            items: list,
+            onOpen: (m) => openDetail(context, m).then((_) => setState(() {})),
+          ),
       ],
     );
   }
@@ -332,16 +412,20 @@ class _HeroBannerState extends State<HeroBanner> {
   void initState() {
     super.initState();
     timer = Timer.periodic(const Duration(seconds: 9), (_) {
-      if (mounted && !hovering && Activity.idleFor(8000) && widget.items.length > 1) show(index + 1);
+      if (mounted &&
+          TickerMode.getValuesNotifier(context).value.enabled &&
+          !hovering &&
+          Activity.idleFor(8000) &&
+          widget.items.length > 1) {
+        show(index + 1);
+      }
     });
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    for (final m in widget.items) {
-      if (str(m, 'background').startsWith('https://')) precacheImage(NetworkImage(str(m, 'background')), context).catchError((_) {});
-    }
+    _prefetch();
   }
 
   @override
@@ -351,10 +435,33 @@ class _HeroBannerState extends State<HeroBanner> {
     super.dispose();
   }
 
-  void show(int i) => setState(() => index = (i % widget.items.length + widget.items.length) % widget.items.length);
+  void _prefetch() {
+    final size = MediaQuery.sizeOf(context),
+        ratio = MediaQuery.devicePixelRatioOf(context);
+    for (final offset in [0, 1]) {
+      final m = widget.items[(index + offset) % widget.items.length];
+      final url = str(m, 'background');
+      if (url.startsWith('https://')) {
+        precacheImage(
+          artworkProvider(url, size.width, ratio),
+          context,
+        ).catchError((_) {});
+      }
+    }
+  }
+
+  void show(int i) {
+    setState(
+      () => index =
+          (i % widget.items.length + widget.items.length) % widget.items.length,
+    );
+    _prefetch();
+  }
 
   KeyEventResult _edge(KeyEvent e, LogicalKeyboardKey key, int step) {
-    if (e.logicalKey != key || widget.items.length < 2) return KeyEventResult.ignored;
+    if (e.logicalKey != key || widget.items.length < 2) {
+      return KeyEventResult.ignored;
+    }
     if (e is KeyDownEvent || e is KeyRepeatEvent) show(index + step);
     return KeyEventResult.handled;
   }
@@ -376,10 +483,17 @@ class _HeroBannerState extends State<HeroBanner> {
             autofocus: true,
             tooltip: 'Play',
             onKey: (e) => _edge(e, LogicalKeyboardKey.arrowLeft, -1),
-            onTap: () => str(m, 'type') == 'series' ? openDetail(context, m) : play(context, m, str(m, 'id')),
+            onTap: () => str(m, 'type') == 'series'
+                ? openDetail(context, m)
+                : play(context, m, str(m, 'id')),
           ),
           const SizedBox(width: 14),
-          Pill(icon: Icons.info_outline_rounded, tooltip: 'More info', onKey: (e) => _edge(e, LogicalKeyboardKey.arrowRight, 1), onTap: () => openDetail(context, m)),
+          Pill(
+            icon: Icons.info_outline_rounded,
+            tooltip: 'More info',
+            onKey: (e) => _edge(e, LogicalKeyboardKey.arrowRight, 1),
+            onTap: () => openDetail(context, m),
+          ),
         ],
         footer: many
             ? Row(
@@ -396,7 +510,12 @@ class _HeroBannerState extends State<HeroBanner> {
                             margin: const EdgeInsets.only(right: 6),
                             width: i == index ? 18 : 6,
                             height: 6,
-                            decoration: BoxDecoration(color: i == index ? green : const Color(0x59f4f8f1), borderRadius: BorderRadius.circular(3)),
+                            decoration: BoxDecoration(
+                              color: i == index
+                                  ? green
+                                  : const Color(0x59f4f8f1),
+                              borderRadius: BorderRadius.circular(3),
+                            ),
                           ),
                         ),
                       ),
@@ -411,7 +530,10 @@ class _HeroBannerState extends State<HeroBanner> {
                   top: 0,
                   bottom: 0,
                   child: Center(
-                    child: _HeroArrow(icon: Icons.chevron_left, onTap: () => show(index - 1)),
+                    child: _HeroArrow(
+                      icon: Icons.chevron_left,
+                      onTap: () => show(index - 1),
+                    ),
                   ),
                 ),
                 Positioned(
@@ -419,7 +541,10 @@ class _HeroBannerState extends State<HeroBanner> {
                   top: 0,
                   bottom: 0,
                   child: Center(
-                    child: _HeroArrow(icon: Icons.chevron_right, onTap: () => show(index + 1)),
+                    child: _HeroArrow(
+                      icon: Icons.chevron_right,
+                      onTap: () => show(index + 1),
+                    ),
                   ),
                 ),
               ]
@@ -440,7 +565,10 @@ class _HeroArrow extends StatelessWidget {
       builder: (context, active) => Container(
         width: 46,
         height: 46,
-        decoration: BoxDecoration(color: active ? white : const Color(0x99121c15), shape: BoxShape.circle),
+        decoration: BoxDecoration(
+          color: active ? white : const Color(0x99121c15),
+          shape: BoxShape.circle,
+        ),
         child: Icon(icon, size: 30, color: active ? ink : white),
       ),
     ),
@@ -449,7 +577,19 @@ class _HeroArrow extends StatelessWidget {
 
 /// Backdrop, title, metadata and actions shared by the browse carousel and the details page.
 class HeroFrame extends StatelessWidget {
-  const HeroFrame({super.key, required this.meta, required this.actions, this.footer, this.overlay = const [], this.details = false});
+  const HeroFrame({
+    super.key,
+    required this.meta,
+    required this.actions,
+    this.footer,
+    this.overlay = const [],
+    this.details = false,
+    this.eyebrow,
+    this.infoOverride,
+    this.descriptionLines,
+  });
+  final String? eyebrow, infoOverride;
+  final int? descriptionLines;
   final Meta meta;
   final List<Widget> actions;
   final Widget? footer;
@@ -461,10 +601,14 @@ class HeroFrame extends StatelessWidget {
     final size = MediaQuery.sizeOf(context);
     final height = (size.height * (details ? .66 : .64)).clamp(440.0, 720.0);
     final g = genres(meta);
-    final genre = g.isNotEmpty ? g.first : (str(meta, 'type') == 'series' ? 'Series' : 'Movie');
+    final genre = g.isNotEmpty
+        ? g.first
+        : (str(meta, 'type') == 'series' ? 'Series' : 'Movie');
     final rating = str(meta, 'imdbRating');
     final info = [
-      str(meta, 'releaseInfo').isEmpty ? str(meta, 'year') : str(meta, 'releaseInfo'),
+      str(meta, 'releaseInfo').isEmpty
+          ? str(meta, 'year')
+          : str(meta, 'releaseInfo'),
       genre,
       if (rating.isNotEmpty) 'IMDb $rating',
       if (details && str(meta, 'runtime').isNotEmpty) str(meta, 'runtime'),
@@ -477,16 +621,34 @@ class HeroFrame extends StatelessWidget {
         children: [
           const DecoratedBox(
             decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [Color(0xff142d19), ink], begin: Alignment.topLeft, end: Alignment.bottomRight),
+              gradient: LinearGradient(
+                colors: [Color(0xff142d19), ink],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
             ),
           ),
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 500),
-            child: Artwork(str(meta, 'background'), key: ValueKey(str(meta, 'background')), width: size.width, radius: 0, alignment: Alignment.topCenter),
+            child: Artwork(
+              str(meta, 'background'),
+              key: ValueKey(str(meta, 'background')),
+              width: size.width,
+              radius: 0,
+              alignment: Alignment.topCenter,
+            ),
           ),
           const DecoratedBox(
             decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [Color(0xff070c09), Color(0xee070c09), Color(0x80070c09), Color(0x10070c09)], stops: [0, .3, .62, 1]),
+              gradient: LinearGradient(
+                colors: [
+                  Color(0xff070c09),
+                  Color(0xee070c09),
+                  Color(0x80070c09),
+                  Color(0x10070c09),
+                ],
+                stops: [0, .3, .62, 1],
+              ),
             ),
           ),
           const Positioned(
@@ -496,7 +658,11 @@ class HeroFrame extends StatelessWidget {
             height: 300,
             child: DecoratedBox(
               decoration: BoxDecoration(
-                gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0x00070c09), Color(0x70070c09), ink]),
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0x00070c09), Color(0x70070c09), ink],
+                ),
               ),
             ),
           ),
@@ -511,30 +677,61 @@ class HeroFrame extends StatelessWidget {
                 // Only the copy cross-fades; the actions stay mounted so a remote's focus survives the carousel turning.
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 260),
-                  layoutBuilder: (current, previous) => Stack(alignment: Alignment.bottomLeft, children: [...previous, ?current]),
+                  layoutBuilder: (current, previous) => Stack(
+                    alignment: Alignment.bottomLeft,
+                    children: [...previous, ?current],
+                  ),
                   child: Column(
                     key: ValueKey(str(meta, 'id')),
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      if (eyebrow != null) ...[
+                        Text(
+                          eyebrow!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: text(
+                            12,
+                            color: green,
+                            weight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                      ],
                       SizedBox(
                         height: 58,
                         child: FittedBox(
                           fit: BoxFit.scaleDown,
                           alignment: Alignment.centerLeft,
-                          child: Text(str(meta, 'name'), maxLines: 1, style: text(46, weight: FontWeight.w500, spacing: -1.4)),
+                          child: Text(
+                            str(meta, 'name'),
+                            maxLines: 1,
+                            style: text(
+                              46,
+                              weight: FontWeight.w500,
+                              spacing: -1.4,
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 10),
-                      Text(info, style: text(13, color: const Color(0xffcad5c9))),
+                      Text(
+                        infoOverride ?? info,
+                        style: text(13, color: const Color(0xffcad5c9)),
+                      ),
                       const SizedBox(height: 14),
                       SizedBox(
                         height: details ? null : 70,
                         child: Text(
                           str(meta, 'description'),
-                          maxLines: details ? 5 : 3,
+                          maxLines: descriptionLines ?? (details ? 5 : 3),
                           overflow: TextOverflow.ellipsis,
-                          style: text(15, color: const Color(0xffbcc8bc), height: 1.5),
+                          style: text(
+                            15,
+                            color: const Color(0xffbcc8bc),
+                            height: 1.5,
+                          ),
                         ),
                       ),
                     ],

@@ -9,6 +9,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'main.dart';
 import 'net.dart';
+import 'remote_navigation.dart';
 import 'store.dart';
 import 'streams.dart';
 import 'theme.dart';
@@ -33,15 +34,56 @@ class _MaximizeAfterFullScreen with WindowListener {
 
 class _PlayerPageState extends State<PlayerPage> with WindowListener {
   late final player = Player(
-    configuration: const PlayerConfiguration(title: 'Dremio', bufferSize: 96 * 1024 * 1024),
+    configuration: const PlayerConfiguration(
+      title: 'Dremio',
+      bufferSize: 96 * 1024 * 1024,
+    ),
   );
   late final controller = VideoController(player);
   final store = Store.instance;
-  final focus = FocusNode(), controls = FocusNode();
+  final focus = FocusNode(debugLabel: 'Video'),
+      controls = FocusNode(debugLabel: 'Play/pause');
+  final backFocus = FocusNode(debugLabel: 'Player back'),
+      volumeFocus = FocusNode(debugLabel: 'Volume slider'),
+      progressFocus = FocusNode(debugLabel: 'Progress bar');
+  final rewindFocus = FocusNode(),
+      forwardFocus = FocusNode(),
+      audioFocus = FocusNode(),
+      subtitlesFocus = FocusNode(),
+      sourcesFocus = FocusNode(),
+      muteFocus = FocusNode(),
+      fullscreenFocus = FocusNode();
+  List<FocusNode> get bottomNodes => [
+    rewindFocus,
+    controls,
+    forwardFocus,
+    audioFocus,
+    subtitlesFocus,
+    sourcesFocus,
+    muteFocus,
+    volumeFocus,
+    if (desktop) fullscreenFocus,
+  ];
+
+  void _focusHud(FocusNode target) {
+    _poke();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && target.context != null) target.requestFocus();
+    });
+  }
+
   final subs = <StreamSubscription>[];
   List<StreamChoice> choices = [];
   int index = 0, attempt = 0, resumeMs = 0, lastSaved = 0;
-  bool ready = false, hadPlayed = false, hasFrames = false, closed = false, hud = true, fullscreen = false, seekedToResume = false, maximizedBefore = false;
+  bool completed = false;
+  bool ready = false,
+      hadPlayed = false,
+      hasFrames = false,
+      closed = false,
+      hud = true,
+      fullscreen = false,
+      seekedToResume = false,
+      maximizedBefore = false;
   String? error;
   Timer? hideTimer, stallTimer;
   Duration position = Duration.zero, duration = Duration.zero;
@@ -95,12 +137,15 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
       player.stream.completed.listen((done) {
         if (!done || closed) return;
         final length = duration.inMilliseconds;
-        if (!hadPlayed || (length > 0 && resumeMs < length - 120000 && position.inMilliseconds < length - 120000)) {
+        if (!hadPlayed ||
+            (length > 0 &&
+                resumeMs < length - 120000 &&
+                position.inMilliseconds < length - 120000)) {
           _next();
           return;
         }
-        store.setInt('position:${widget.video}', 0);
-        store.setInt('duration:${widget.video}', 0);
+        completed = true;
+        store.saveProgress(widget.video, 0, 0);
         _exit();
       }),
       player.stream.tracks.listen((_) {
@@ -129,7 +174,9 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
       choices = found;
       index = 0;
       if (found.isEmpty) {
-        if (type == 'movie') store.setInt('nostreams:${widget.video}', store.now());
+        if (type == 'movie') {
+          store.setInt('nostreams:${widget.video}', store.now());
+        }
         _fail('No streams found.');
       } else {
         _start();
@@ -160,7 +207,13 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
     try {
       final address = await preflight(choice);
       if (closed || current != attempt) return;
-      await player.open(Media(address, httpHeaders: {'User-Agent': userAgent, ...choice.headers}), play: true);
+      await player.open(
+        Media(
+          address,
+          httpHeaders: {'User-Agent': userAgent, ...choice.headers},
+        ),
+        play: true,
+      );
       stallTimer = Timer(const Duration(seconds: 35), () {
         if (!closed && current == attempt && !hasFrames) _next();
       });
@@ -180,10 +233,7 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
     if (hadPlayed) return;
     hadPlayed = true;
     ready = true;
-    final id = str(widget.meta, 'id');
-    store.setInt('opened:$id', store.now());
-    store.setInt('played:$id', store.now());
-    store.setString('video:$id', widget.video);
+    store.recordPlayback(widget.meta, widget.video);
     if (duration.inMilliseconds > 0) _resume();
     setState(() {});
     _poke();
@@ -194,7 +244,14 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
   Future<void> _addOnlineSubtitles(int current) async {
     final native = player.platform;
     if (native is! NativePlayer) return;
-    if (player.state.tracks.subtitle.any((t) => t.id != 'auto' && t.id != 'no' && (t.language ?? '').toLowerCase().startsWith('en'))) return;
+    if (player.state.tracks.subtitle.any(
+      (t) =>
+          t.id != 'auto' &&
+          t.id != 'no' &&
+          (t.language ?? '').toLowerCase().startsWith('en'),
+    )) {
+      return;
+    }
     try {
       for (final s in await onlineSubtitles(type, widget.video)) {
         if (closed || current != attempt) return;
@@ -218,12 +275,11 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
   }
 
   void _savePosition() {
-    if (!ready) return;
+    if (!ready || completed) return;
     final t = position.inMilliseconds, length = duration.inMilliseconds;
     if (t > 0) {
       resumeMs = t;
-      store.setInt('position:${widget.video}', t);
-      store.setInt('duration:${widget.video}', length);
+      store.saveProgress(widget.video, t, length);
     }
     lastSaved = store.now();
   }
@@ -233,7 +289,9 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
     if (!hud) setState(() => hud = true);
     hideTimer?.cancel();
     hideTimer = Timer(const Duration(seconds: 3), () {
-      if (mounted && ready && playing && !inControls) setState(() => hud = false);
+      if (mounted && ready && playing && !inControls) {
+        setState(() => hud = false);
+      }
     });
   }
 
@@ -246,7 +304,11 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
   void _seek(int seconds) {
     if (!ready) return;
     final target = position + Duration(seconds: seconds);
-    player.seek(target < Duration.zero ? Duration.zero : (duration > Duration.zero && target > duration ? duration : target));
+    player.seek(
+      target < Duration.zero
+          ? Duration.zero
+          : (duration > Duration.zero && target > duration ? duration : target),
+    );
     _poke();
   }
 
@@ -295,8 +357,15 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
     if (nav != null && nav.canPop()) nav.pop();
   }
 
-  Future<void> _pick<T>(String heading, List<T> options, T? selected, String Function(T) name, void Function(T) choose) async {
+  Future<void> _pick<T>(
+    String heading,
+    List<T> options,
+    T? selected,
+    String Function(T) name,
+    void Function(T) choose,
+  ) async {
     hideTimer?.cancel();
+    final previous = FocusManager.instance.primaryFocus;
     final picked = await showDialog<T>(
       context: context,
       builder: (context) => SimpleDialog(
@@ -307,9 +376,17 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
               onPressed: () => Navigator.pop(context, o),
               child: Row(
                 children: [
-                  SizedBox(width: 26, child: o == selected ? const Icon(Icons.check, size: 18, color: green) : null),
+                  SizedBox(
+                    width: 26,
+                    child: o == selected
+                        ? const Icon(Icons.check, size: 18, color: green)
+                        : null,
+                  ),
                   Expanded(
-                    child: Text(name(o), style: text(14, color: o == selected ? green : white)),
+                    child: Text(
+                      name(o),
+                      style: text(14, color: o == selected ? green : white),
+                    ),
                   ),
                 ],
               ),
@@ -317,38 +394,63 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
         ],
       ),
     );
+    if (!mounted) return;
     if (picked != null) choose(picked);
-    _poke();
-    focus.requestFocus();
+    _focusHud(previous ?? controls);
   }
 
   String _trackName(dynamic t, bool captions) {
     if (t.id == 'auto') return 'Auto';
     if (t.id == 'no') return captions ? 'Off' : 'None';
-    final parts = [t.title, t.language].where((s) => s != null && '$s'.isNotEmpty).join(' · ');
+    final parts = [
+      t.title,
+      t.language,
+    ].where((s) => s != null && '$s'.isNotEmpty).join(' · ');
     return parts.isEmpty ? 'Track ${t.id}' : parts;
   }
 
   void _audio() {
     if (!ready) return;
-    final tracks = player.state.tracks.audio.where((t) => t.id != 'no').toList();
-    _pick<AudioTrack>('Audio', tracks, player.state.track.audio, (t) => _trackName(t, false), player.setAudioTrack);
+    final tracks = player.state.tracks.audio
+        .where((t) => t.id != 'no')
+        .toList();
+    _pick<AudioTrack>(
+      'Audio',
+      tracks,
+      player.state.track.audio,
+      (t) => _trackName(t, false),
+      player.setAudioTrack,
+    );
   }
 
   void _subtitles() {
     if (!ready) return;
-    final tracks = player.state.tracks.subtitle.where((t) => t.id != 'auto').toList();
-    _pick<SubtitleTrack>('Subtitles', tracks, player.state.track.subtitle, (t) => _trackName(t, true), player.setSubtitleTrack);
+    final tracks = player.state.tracks.subtitle
+        .where((t) => t.id != 'auto')
+        .toList();
+    _pick<SubtitleTrack>(
+      'Subtitles',
+      tracks,
+      player.state.track.subtitle,
+      (t) => _trackName(t, true),
+      player.setSubtitleTrack,
+    );
   }
 
   void _sources() {
     if (choices.isEmpty) return;
-    _pick<int>('Sources', List.generate(choices.length, (i) => i), index, (i) => choices[i].label, (i) {
-      if (i == index) return;
-      _savePosition();
-      index = i;
-      _start();
-    });
+    _pick<int>(
+      'Sources',
+      List.generate(choices.length, (i) => i),
+      index,
+      (i) => choices[i].label,
+      (i) {
+        if (i == index) return;
+        _savePosition();
+        index = i;
+        _start();
+      },
+    );
   }
 
   void _setVolume(double v) {
@@ -364,31 +466,43 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
   bool get inControls => ready && focus.hasFocus && !focus.hasPrimaryFocus;
 
   KeyEventResult _key(FocusNode node, KeyEvent e) {
-    if (e is! KeyDownEvent && e is! KeyRepeatEvent) return KeyEventResult.ignored;
+    if (e is! KeyDownEvent && e is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
     final k = e.logicalKey;
-    if (k == LogicalKeyboardKey.mediaPlayPause || k == LogicalKeyboardKey.mediaPlay || k == LogicalKeyboardKey.mediaPause) {
+    if (k == LogicalKeyboardKey.mediaPlayPause ||
+        k == LogicalKeyboardKey.mediaPlay ||
+        k == LogicalKeyboardKey.mediaPause) {
       _toggle();
       return KeyEventResult.handled;
     }
     if (!focus.hasPrimaryFocus) {
-      if (k != LogicalKeyboardKey.arrowUp || !inControls) return KeyEventResult.ignored;
-      focus.requestFocus();
-      _poke();
-      return KeyEventResult.handled;
+      if (desktop || !inControls) return KeyEventResult.ignored;
+      return playerControlStep(
+        k,
+        back: backFocus,
+        play: controls,
+        progress: progressFocus,
+        video: focus,
+        bottom: bottomNodes,
+        request: _focusHud,
+      );
     }
-    if (!desktop && (k == LogicalKeyboardKey.select || k == LogicalKeyboardKey.enter)) {
+    if (!desktop &&
+        (k == LogicalKeyboardKey.select || k == LogicalKeyboardKey.enter)) {
       _toggle();
     } else if (!desktop && k == LogicalKeyboardKey.arrowDown) {
       if (!ready) return KeyEventResult.ignored;
-      setState(() => hud = true);
-      controls.requestFocus();
+      _focusHud(controls);
     } else if (!desktop && k == LogicalKeyboardKey.arrowUp) {
-      _poke();
+      if (ready) _focusHud(progressFocus);
     } else if (k == LogicalKeyboardKey.space || k == LogicalKeyboardKey.keyK) {
       _toggle();
-    } else if (k == LogicalKeyboardKey.arrowLeft || k == LogicalKeyboardKey.keyJ) {
+    } else if (k == LogicalKeyboardKey.arrowLeft ||
+        k == LogicalKeyboardKey.keyJ) {
       _seek(-10);
-    } else if (k == LogicalKeyboardKey.arrowRight || k == LogicalKeyboardKey.keyL) {
+    } else if (k == LogicalKeyboardKey.arrowRight ||
+        k == LogicalKeyboardKey.keyL) {
       _seek(10);
     } else if (k == LogicalKeyboardKey.mediaFastForward) {
       _seek(30);
@@ -431,12 +545,28 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
     player.dispose();
     focus.dispose();
     controls.dispose();
+    backFocus.dispose();
+    volumeFocus.dispose();
+    progressFocus.dispose();
+    for (final node in [
+      rewindFocus,
+      forwardFocus,
+      audioFocus,
+      subtitlesFocus,
+      sourcesFocus,
+      muteFocus,
+      fullscreenFocus,
+    ]) {
+      node.dispose();
+    }
     super.dispose();
   }
 
   String _clock(Duration d) {
     final s = d.inSeconds;
-    return s >= 3600 ? '${s ~/ 3600}:${(s ~/ 60 % 60).toString().padLeft(2, '0')}:${(s % 60).toString().padLeft(2, '0')}' : '${s ~/ 60}:${(s % 60).toString().padLeft(2, '0')}';
+    return s >= 3600
+        ? '${s ~/ 3600}:${(s ~/ 60 % 60).toString().padLeft(2, '0')}:${(s % 60).toString().padLeft(2, '0')}'
+        : '${s ~/ 60}:${(s % 60).toString().padLeft(2, '0')}';
   }
 
   @override
@@ -456,7 +586,9 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
           autofocus: true,
           onKeyEvent: _key,
           child: MouseRegion(
-            cursor: showHud ? SystemMouseCursors.basic : SystemMouseCursors.none,
+            cursor: showHud
+                ? SystemMouseCursors.basic
+                : SystemMouseCursors.none,
             onHover: (_) => _poke(),
             child: Listener(
               onPointerSignal: (e) {
@@ -470,12 +602,19 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    Video(controller: controller, controls: NoVideoControls, fill: Colors.black),
+                    Video(
+                      controller: controller,
+                      controls: NoVideoControls,
+                      fill: Colors.black,
+                    ),
                     if (!ready) _loading(),
                     AnimatedOpacity(
                       opacity: showHud ? 1 : 0,
                       duration: const Duration(milliseconds: 220),
-                      child: IgnorePointer(ignoring: !showHud, child: _hud()),
+                      child: ExcludeFocus(
+                        excluding: !showHud,
+                        child: IgnorePointer(ignoring: !showHud, child: _hud()),
+                      ),
                     ),
                   ],
                 ),
@@ -497,10 +636,26 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
         const SizedBox(height: 22),
         ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 620),
-          child: Text(title, textAlign: TextAlign.center, maxLines: 2, style: text(28)),
+          child: Text(
+            title,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            style: text(28),
+          ),
         ),
         const SizedBox(height: 28),
-        if (error == null) const Swirl() else ...[Text(error!, style: text(15, color: green)), const SizedBox(height: 22), Pill(icon: Icons.arrow_back_rounded, label: 'Back', autofocus: true, onTap: _exit)],
+        if (error == null)
+          const Swirl()
+        else ...[
+          Text(error!, style: text(15, color: green)),
+          const SizedBox(height: 22),
+          Pill(
+            icon: Icons.arrow_back_rounded,
+            label: 'Back',
+            autofocus: true,
+            onTap: _exit,
+          ),
+        ],
       ],
     ),
   );
@@ -516,11 +671,26 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
           height: 120,
           child: Container(
             decoration: const BoxDecoration(
-              gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0xc0070c09), Color(0x00070c09)]),
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xc0070c09), Color(0x00070c09)],
+              ),
             ),
             alignment: Alignment.topLeft,
-            padding: EdgeInsets.fromLTRB(fullscreen || !desktop ? 40 : 90, 26, 40, 0),
-            child: Pill(icon: Icons.arrow_back_rounded, tooltip: 'Back  (Esc)', height: 44, onTap: _exit),
+            padding: EdgeInsets.fromLTRB(
+              fullscreen || !desktop ? 40 : 90,
+              26,
+              40,
+              0,
+            ),
+            child: Pill(
+              icon: Icons.arrow_back_rounded,
+              focusNode: backFocus,
+              tooltip: 'Back  (Esc)',
+              height: 44,
+              onTap: _exit,
+            ),
           ),
         ),
         if (ready)
@@ -531,24 +701,62 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
             child: Container(
               padding: const EdgeInsets.fromLTRB(48, 50, 48, 26),
               decoration: const BoxDecoration(
-                gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0x00070c09), Color(0xc0070c09), Color(0xf5070c09)]),
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0x00070c09),
+                    Color(0xc0070c09),
+                    Color(0xf5070c09),
+                  ],
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: text(20)),
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: text(20),
+                  ),
                   Row(
                     children: [
                       Expanded(
-                        child: ExcludeFocus(
-                          excluding: !desktop,
+                        child: RemoteSliderKeys(
+                          focusNode: progressFocus,
+                          value: total > 0
+                              ? position.inMilliseconds
+                                    .clamp(0, total)
+                                    .toDouble()
+                              : 0,
+                          maximum: total > 0 ? total.toDouble() : 1,
+                          step: 10000,
+                          onActivate: _toggle,
+                          onChanged: (value) {
+                            if (total <= 0) return;
+                            final target = Duration(
+                              milliseconds: value.round(),
+                            );
+                            setState(() => position = target);
+                            player.seek(target);
+                            _poke();
+                          },
                           child: Slider(
-                            value: total > 0 ? position.inMilliseconds.clamp(0, total).toDouble() : 0,
+                            value: total > 0
+                                ? position.inMilliseconds
+                                      .clamp(0, total)
+                                      .toDouble()
+                                : 0,
                             max: total > 0 ? total.toDouble() : 1,
                             onChanged: total > 0
                                 ? (v) {
-                                    setState(() => position = Duration(milliseconds: v.round()));
+                                    setState(
+                                      () => position = Duration(
+                                        milliseconds: v.round(),
+                                      ),
+                                    );
                                     hideTimer?.cancel();
                                   }
                                 : null,
@@ -560,24 +768,65 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
                         ),
                       ),
                       const SizedBox(width: 12),
-                      Text('${_clock(position)} / ${_clock(duration)}', style: text(13, color: const Color(0xffcbd6cb))),
+                      Text(
+                        '${_clock(position)} / ${_clock(duration)}',
+                        style: text(13, color: const Color(0xffcbd6cb)),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 6),
                   FocusTraversalGroup(
                     child: Row(
                       children: [
-                        Pill(icon: Icons.replay_10_rounded, tooltip: 'Back 10 seconds  (←)', height: 44, onTap: () => _seek(-10)),
+                        Pill(
+                          icon: Icons.replay_10_rounded,
+                          focusNode: rewindFocus,
+                          tooltip: 'Back 10 seconds  (←)',
+                          height: 44,
+                          onTap: () => _seek(-10),
+                        ),
                         const SizedBox(width: 12),
-                        Pill(icon: playing ? Icons.pause_rounded : Icons.play_arrow_rounded, focusNode: controls, tooltip: playing ? 'Pause  (Space)' : 'Play  (Space)', height: 44, onTap: _toggle),
+                        Pill(
+                          icon: playing
+                              ? Icons.pause_rounded
+                              : Icons.play_arrow_rounded,
+                          focusNode: controls,
+                          tooltip: playing ? 'Pause  (Space)' : 'Play  (Space)',
+                          height: 44,
+                          onTap: _toggle,
+                        ),
                         const SizedBox(width: 12),
-                        Pill(icon: Icons.forward_10_rounded, tooltip: 'Forward 10 seconds  (→)', height: 44, onTap: () => _seek(10)),
+                        Pill(
+                          icon: Icons.forward_10_rounded,
+                          focusNode: forwardFocus,
+                          tooltip: 'Forward 10 seconds  (→)',
+                          height: 44,
+                          onTap: () => _seek(10),
+                        ),
                         const SizedBox(width: 12),
-                        Pill(icon: Icons.record_voice_over_rounded, tooltip: 'Audio track', height: 44, onTap: _audio),
+                        Pill(
+                          icon: Icons.record_voice_over_rounded,
+                          focusNode: audioFocus,
+                          tooltip: 'Audio track',
+                          height: 44,
+                          onTap: _audio,
+                        ),
                         const SizedBox(width: 12),
-                        Pill(icon: Icons.subtitles_outlined, tooltip: 'Subtitles', height: 44, onTap: _subtitles),
+                        Pill(
+                          icon: Icons.subtitles_outlined,
+                          focusNode: subtitlesFocus,
+                          tooltip: 'Subtitles',
+                          height: 44,
+                          onTap: _subtitles,
+                        ),
                         const SizedBox(width: 12),
-                        Pill(icon: Icons.layers_outlined, tooltip: 'Sources', height: 44, onTap: _sources),
+                        Pill(
+                          icon: Icons.layers_outlined,
+                          focusNode: sourcesFocus,
+                          tooltip: 'Sources',
+                          height: 44,
+                          onTap: _sources,
+                        ),
                         const Spacer(),
                         Pill(
                           icon: volume == 0
@@ -585,14 +834,21 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
                               : volume < 50
                               ? Icons.volume_down_rounded
                               : Icons.volume_up_rounded,
+                          focusNode: muteFocus,
                           tooltip: volume == 0 ? 'Unmute  (M)' : 'Mute  (M)',
                           height: 44,
                           onTap: _mute,
                         ),
                         SizedBox(
                           width: 130,
-                          child: ExcludeFocus(
-                            excluding: !desktop,
+                          child: RemoteVolumeKeys(
+                            focusNode: volumeFocus,
+                            onActivate: _mute,
+                            value: volume,
+                            onChanged: (v) {
+                              _setVolume(v);
+                              _poke();
+                            },
                             child: Slider(
                               value: volume,
                               max: 100,
@@ -605,7 +861,16 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
                           ),
                         ),
                         if (desktop) const SizedBox(width: 12),
-                        if (desktop) Pill(icon: fullscreen ? Icons.fullscreen_exit_rounded : Icons.fullscreen_rounded, tooltip: 'Full screen  (F)', height: 44, onTap: () => _setFullscreen(!fullscreen)),
+                        if (desktop)
+                          Pill(
+                            icon: fullscreen
+                                ? Icons.fullscreen_exit_rounded
+                                : Icons.fullscreen_rounded,
+                            focusNode: fullscreenFocus,
+                            tooltip: 'Full screen  (F)',
+                            height: 44,
+                            onTap: () => _setFullscreen(!fullscreen),
+                          ),
                       ],
                     ),
                   ),

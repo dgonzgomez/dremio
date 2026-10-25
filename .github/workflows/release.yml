@@ -1,0 +1,129 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      release: ${{ steps.check.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(sed -n 's/^version: *\([^+]*\).*/\1/p' pubspec.yaml)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if gh release view "v$version" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter build windows --release
+      - name: Package
+        shell: pwsh
+        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath Dremio-windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Dremio-windows-x64
+          path: Dremio-windows-x64.zip
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: tool/build_macos.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Dremio-macos
+          path: build/Dremio-macos.zip
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Signing key
+        id: key
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_DEBUG_KEYSTORE }}
+        run: |
+          if [ -z "$KEYSTORE" ]; then
+            echo "::warning::ANDROID_DEBUG_KEYSTORE secret not set; skipping the Android APK."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            mkdir -p ~/.android
+            echo "$KEYSTORE" | base64 -d > ~/.android/debug.keystore
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.key.outputs.present == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - if: steps.key.outputs.present == 'true'
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - if: steps.key.outputs.present == 'true'
+        run: |
+          flutter pub get
+          flutter build apk --release --target-platform android-arm
+          mv build/app/outputs/flutter-apk/app-release.apk Dremio-android-arm.apk
+      - if: steps.key.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Dremio-android-arm
+          path: Dremio-android-arm.apk
+
+  release:
+    needs: [version, windows, macos, android]
+    if: needs.version.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          awk -v h="### $VERSION" '
+            $0 == h { on = 1; next }
+            on && /^#{2,3} / { exit }
+            on { print }
+          ' README.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            git fetch --tags --quiet
+            previous=$(git describe --tags --abbrev=0 2>/dev/null || true)
+            git log --format='- %s' ${previous:+$previous..}HEAD > notes.md
+          fi
+          gh release create "v$VERSION" dist/* --title "Dremio $VERSION" --notes-file notes.md --target "$GITHUB_SHA"

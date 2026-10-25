@@ -98,8 +98,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> save() async {
     final value = link.text.trim();
-    if (!validDebridioLink(value)) {
-      setState(() => feedback = 'Invalid link.');
+    if (!validDebridioLink(value)) {      setState(() => feedback = 'Invalid link.');
       return;
     }
     setState(() {
@@ -108,16 +107,14 @@ class _SettingsPageState extends State<SettingsPage> {
     });
     try {
       await checkManifest(value);
-      await store.saveConnection(value);
-      if (!mounted) return;
+      await store.saveConnection(value);      if (!mounted) return;
       setState(() {
         editing = false;
         checking = false;
         feedback = '';
         link.clear();
       });
-    } catch (_) {
-      if (mounted) {
+    } catch (_) {      if (mounted) {
         setState(() {
           checking = false;
           feedback = 'Couldn’t connect.';
