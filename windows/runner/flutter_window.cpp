@@ -1,5 +1,7 @@
 #include "flutter_window.h"
 
+#include <flutter/standard_method_codec.h>
+
 #include <optional>
 
 #include "flutter/generated_plugin_registrant.h"
@@ -25,6 +27,10 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  window_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(), "dremio/window",
+          &flutter::StandardMethodCodec::GetInstance());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -39,7 +45,14 @@ bool FlutterWindow::OnCreate() {
   return true;
 }
 
+void FlutterWindow::ToggleFullScreen() {
+  if (window_channel_) {
+    window_channel_->InvokeMethod("toggleFullScreen", nullptr);
+  }
+}
+
 void FlutterWindow::OnDestroy() {
+  window_channel_ = nullptr;
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

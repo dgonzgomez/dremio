@@ -32,8 +32,26 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   }
   window.SetQuitOnClose(true);
 
+  // Alt+Enter toggles full screen. It's taken here, before the Flutter view
+  // sees it, so it never also presses the focused button, and Windows never
+  // goes looking for a menu shortcut (which plays the error sound).
+  bool swallow_enter_up = false;
   ::MSG msg;
   while (::GetMessage(&msg, nullptr, 0, 0)) {
+    if (msg.wParam == VK_RETURN) {
+      const bool alt = (msg.lParam & (1 << 29)) != 0;
+      const bool repeat = (msg.lParam & (1 << 30)) != 0;
+      if (msg.message == WM_SYSKEYDOWN && alt) {
+        if (!repeat) window.ToggleFullScreen();
+        swallow_enter_up = true;
+        continue;
+      }
+      if (swallow_enter_up &&
+          (msg.message == WM_SYSKEYUP || msg.message == WM_KEYUP)) {
+        swallow_enter_up = false;
+        continue;
+      }
+    }
     ::TranslateMessage(&msg);
     ::DispatchMessage(&msg);
   }

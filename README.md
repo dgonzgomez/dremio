@@ -98,6 +98,7 @@ Builds need several GB of temporary space (Gradle and Xcode caches). If a build 
 
 ### 0.5.6
 
+- Windows: Alt+Enter is handled by the window itself, so it always toggles full screen, never presses the selected button, and doesn't play the error sound.
 - Windows updates: Dremio checks it can write to its folder before closing, retries files Windows still has locked, always reopens afterwards, and explains in Settings if an update didn't finish.
 
 ### 0.5.5

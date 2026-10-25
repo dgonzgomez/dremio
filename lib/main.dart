@@ -31,6 +31,10 @@ Future<void> main() async {
   var maximize = false;
   if (desktop) {
     await windowManager.ensureInitialized();
+    // Windows catches Alt+Enter natively (windows/runner/main.cpp) and forwards it here.
+    const MethodChannel('dremio/window').setMethodCallHandler((call) async {
+      if (call.method == 'toggleFullScreen') await FullScreen.toggle();
+    });
     final fit = await _fitScreen();
     maximize = fit.maximize;
     await windowManager.waitUntilReadyToShow(
