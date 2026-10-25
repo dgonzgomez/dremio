@@ -8,6 +8,10 @@ export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
 fallback="$(cd .. && pwd)/.tools/ipv4first.rb"
 [ -f "$fallback" ] && export RUBYOPT="-r$fallback"
 
+# A stable certificate keeps the Keychain from re-asking for saved links after every build; ad hoc otherwise.
+identity="${SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*) \([0-9A-F]\{40\}\) "Apple Development.*/\1/p' | head -1)}"
+identity="${identity:--}"
+
 flutter build macos --release
 
 app=build/macos/Build/Products/Release/Dremio.app
@@ -22,9 +26,9 @@ while IFS= read -r -d '' file; do
 done < <(find "$app/Contents" -type f -perm -u+x -print0)
 
 for framework in "$app"/Contents/Frameworks/*.framework; do
-  codesign --force --sign - "$framework"
+  codesign --force --sign "$identity" "$framework"
 done
-codesign --force --sign - --entitlements "$entitlements" "$app"
+codesign --force --sign "$identity" --entitlements "$entitlements" "$app"
 rm "$entitlements"
 codesign --verify --deep --strict "$app"
 
