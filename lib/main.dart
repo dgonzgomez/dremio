@@ -9,6 +9,7 @@ import 'package:window_manager/window_manager.dart';
 import 'artwork_cache.dart';
 import 'browse.dart';
 import 'catalog.dart';
+import 'fullscreen.dart';
 import 'net.dart';
 import 'store.dart';
 import 'theme.dart';
@@ -125,6 +126,14 @@ class DremioApp extends StatefulWidget {
 class _DremioAppState extends State<DremioApp> {
   bool _onKey(KeyEvent event) {
     Activity.touch();
+    if (desktop &&
+        event is KeyDownEvent &&
+        HardwareKeyboard.instance.isAltPressed &&
+        (event.logicalKey == LogicalKeyboardKey.enter ||
+            event.logicalKey == LogicalKeyboardKey.numpadEnter)) {
+      FullScreen.toggle();
+      return true;
+    }
     return false;
   }
 

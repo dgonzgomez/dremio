@@ -7,6 +7,8 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'fullscreen.dart';
+
 import 'main.dart';
 import 'net.dart';
 import 'remote_navigation.dart';
@@ -24,14 +26,6 @@ class PlayerPage extends StatefulWidget {
 }
 
 /// Re-maximizes once the window has actually left full screen; on macOS that's after the exit animation.
-class _MaximizeAfterFullScreen with WindowListener {
-  @override
-  void onWindowLeaveFullScreen() {
-    windowManager.removeListener(this);
-    windowManager.maximize();
-  }
-}
-
 class _PlayerPageState extends State<PlayerPage> with WindowListener {
   late final player = Player(
     configuration: const PlayerConfiguration(
@@ -83,7 +77,7 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
       hud = true,
       fullscreen = false,
       seekedToResume = false,
-      maximizedBefore = false;
+      enteredFullscreen = false;
   String? error;
   Timer? hideTimer, stallTimer;
   Duration position = Duration.zero, duration = Duration.zero;
@@ -312,26 +306,12 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
     _poke();
   }
 
-  /// A maximized window only half-enters full screen (the title bar stays), so leave maximized first and restore it afterwards.
+  /// Leaving the player only undoes full screen it turned on itself, not full screen forced from the main UI.
   Future<void> _setFullscreen(bool value) async {
     if (!desktop) return;
-    if (value == await windowManager.isFullScreen()) {
-      if (mounted) setState(() => fullscreen = value);
-      return;
-    }
-    if (value) {
-      maximizedBefore = await windowManager.isMaximized();
-      if (maximizedBefore) await windowManager.unmaximize();
-    }
-    if (!value) _restoreMaximized();
-    await windowManager.setFullScreen(value);
+    enteredFullscreen = value && (enteredFullscreen || !fullscreen);
+    await FullScreen.set(value);
     if (mounted) setState(() => fullscreen = value);
-  }
-
-  void _restoreMaximized() {
-    if (!maximizedBefore) return;
-    maximizedBefore = false;
-    windowManager.addListener(_MaximizeAfterFullScreen());
   }
 
   @override
@@ -352,7 +332,7 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
   }
 
   void _exit() {
-    if (fullscreen) _setFullscreen(false);
+    if (enteredFullscreen) _setFullscreen(false);
     final nav = navigatorKey.currentState;
     if (nav != null && nav.canPop()) nav.pop();
   }
@@ -538,10 +518,7 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
       s.cancel();
     }
     if (desktop) windowManager.removeListener(this);
-    if (fullscreen) {
-      _restoreMaximized();
-      windowManager.setFullScreen(false);
-    }
+    if (enteredFullscreen) FullScreen.set(false);
     player.dispose();
     focus.dispose();
     controls.dispose();
