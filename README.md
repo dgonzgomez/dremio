@@ -96,6 +96,11 @@ Builds need several GB of temporary space (Gradle and Xcode caches). If a build 
 
 ## What's new
 
+### 0.5.5
+
+- Mac and Windows: the window scales to the display, reading the usable screen area with display scaling (e.g. 125%) applied. Screens too small for 1440x900 open maximized; larger ones get about 75% of the screen.
+- Windows: Alt+Enter no longer plays the error sound.
+
 ### 0.5.4
 
 - Recommendations stay fresh when the app is left open: catalogs are rechecked when Dremio comes back to the foreground and hourly while idle, and Home picks up the daily reshuffle.

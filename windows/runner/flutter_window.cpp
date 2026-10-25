@@ -65,6 +65,13 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     case WM_FONTCHANGE:
       flutter_controller_->engine()->ReloadSystemFonts();
       break;
+    case WM_SYSCOMMAND:
+      // Alt+Enter is the app's full-screen toggle; without this Windows looks
+      // for a matching menu item, finds none and plays the error sound.
+      if ((wparam & 0xFFF0) == SC_KEYMENU && lparam == VK_RETURN) {
+        return 0;
+      }
+      break;
   }
 
   return Win32Window::MessageHandler(hwnd, message, wparam, lparam);

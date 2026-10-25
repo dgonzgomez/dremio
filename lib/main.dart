@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:screen_retriever/screen_retriever.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'artwork_cache.dart';
@@ -27,9 +28,11 @@ Future<void> main() async {
     PaintingBinding.instance.imageCache.maximumSizeBytes = 48 * 1024 * 1024;
     PaintingBinding.instance.imageCache.maximumSize = 180;
   }
+  var maximize = false;
   if (desktop) {
     await windowManager.ensureInitialized();
-    final fit = _fitScreen();
+    final fit = await _fitScreen();
+    maximize = fit.maximize;
     await windowManager.waitUntilReadyToShow(
       WindowOptions(
         title: 'Dremio',
@@ -67,25 +70,44 @@ Future<void> main() async {
       WidgetsBinding.instance.waitUntilFirstFrameRasterized,
       Future<void>.delayed(const Duration(milliseconds: 800)),
     ]);
+    if (maximize) await windowManager.maximize();
     await windowManager.show();
     await windowManager.focus();
   }
   Catalog.instance.refresh();
 }
 
-/// Opens at 1440x900 where it fits, otherwise shrinks to the screen (in logical
-/// pixels, so display scaling counts), leaving room for the title bar and taskbar.
-({Size size, Size minimum}) _fitScreen() {
-  final display =
-      WidgetsBinding.instance.platformDispatcher.views.first.display;
-  final screen = display.size / display.devicePixelRatio;
-  if (screen.isEmpty) {
-    return (size: const Size(1440, 900), minimum: const Size(960, 620));
+/// Sizes the window from the screen's usable area (logical pixels, taskbar/menu bar excluded, display scaling applied).
+/// Small screens open maximized; others get ~75% of the screen, at least 1440x900.
+Future<({Size size, Size minimum, bool maximize})> _fitScreen() async {
+  Size area;
+  try {
+    final display = await screenRetriever.getPrimaryDisplay();
+    area = display.visibleSize ?? display.size;
+  } catch (_) {
+    final display =
+        WidgetsBinding.instance.platformDispatcher.views.first.display;
+    area = display.size / display.devicePixelRatio;
   }
-  final room = Size(screen.width * .92, screen.height * .85);
+  if (area.isEmpty) {
+    return (
+      size: const Size(1440, 900),
+      minimum: const Size(960, 620),
+      maximize: false,
+    );
+  }
+  final room = Size(area.width * .92, area.height * .88);
+  final minimum = Size(math.min(960, room.width), math.min(620, room.height));
+  if (room.width < 1440 || room.height < 900) {
+    return (size: room, minimum: minimum, maximize: true);
+  }
   return (
-    size: Size(math.min(1440, room.width), math.min(900, room.height)),
-    minimum: Size(math.min(960, room.width), math.min(620, room.height)),
+    size: Size(
+      math.max(1440, area.width * .75),
+      math.max(900, area.height * .75),
+    ),
+    minimum: minimum,
+    maximize: false,
   );
 }
 
