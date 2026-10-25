@@ -1,0 +1,5 @@
+#include "../../Flutter/Flutter-Release.xcconfig"
+#include "Warnings.xcconfig"
+
+// Apple Silicon only; tool/build_macos.sh thins the prebuilt mpv frameworks to match.
+ARCHS = arm64

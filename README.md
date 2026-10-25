@@ -1,0 +1,85 @@
+# Dremio
+
+Dremio for Mac, Windows and Fire TV / Android TV, built with Flutter.
+
+## Requirements (all platforms)
+
+- [Flutter](https://docs.flutter.dev/get-started/install) stable, 3.44 or newer (Dart 3.12+). Check with `flutter --version`.
+- Run `flutter pub get` once in this folder before your first build.
+- `flutter doctor` lists anything missing for the platform you're building.
+
+Each platform has to be built on its own OS: Windows apps on Windows, Mac apps on a Mac. Android builds work from either.
+
+## Mac
+
+Needs a Mac with Apple Silicon, [Xcode](https://apps.apple.com/app/xcode/id497799835) (open it once to accept the license) and CocoaPods (`brew install cocoapods`).
+
+```sh
+tool/build_macos.sh
+```
+
+This builds a release app, strips the Intel code from the bundled video player to keep it small, signs it ad hoc and zips it:
+
+- App: `build/macos/Build/Products/Release/Dremio.app`
+- Zip to share: `build/Dremio-macos.zip`
+
+The app isn't notarized, so on another Mac the first launch needs a right-click on Dremio.app, then **Open**. If macOS says the app is damaged, run `xattr -dr com.apple.quarantine /path/to/Dremio.app`.
+
+For a quick development run: `flutter run -d macos`.
+
+## Windows
+
+Needs Windows 10 or 11 (x64) and [Visual Studio 2022](https://visualstudio.microsoft.com/vs/community/) with the **Desktop development with C++** workload. (This is Visual Studio itself, not VS Code.)
+
+```powershell
+flutter build windows --release
+```
+
+The app is the whole folder `build\windows\x64\runner\Release\`. Run `Dremio.exe` from it. To share it, zip the entire folder, because the exe needs the DLLs and `data` folder next to it:
+
+```powershell
+Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath Dremio-windows-x64.zip
+```
+
+Windows SmartScreen will warn on first launch because the app isn't code-signed. Click **More info**, then **Run anyway**.
+
+For a quick development run: `flutter run -d windows`.
+
+### Without a Windows PC
+
+`.github/workflows/desktop.yml` builds both the Windows zip and the Mac zip on GitHub's servers whenever `main` is pushed (or from **Actions → Desktop builds → Run workflow**). Download them from the run's **Artifacts** section.
+
+## Android / Fire TV
+
+Needs JDK 17 and the Android SDK. Installing [Android Studio](https://developer.android.com/studio) provides both. Without Android Studio, set `JAVA_HOME` to a JDK 17 and `ANDROID_HOME` to the SDK, and run `flutter config --android-sdk <path>`.
+
+```sh
+flutter build apk --release --target-platform android-arm
+```
+
+Output: `build/app/outputs/flutter-apk/app-release.apk`.
+
+`android-arm` targets 32-bit ARM, which is what Fire TV Sticks and most TVs run, and keeps the APK smaller. For phones or newer 64-bit devices, drop `--target-platform` to build one APK that runs everywhere.
+
+The app installs as **Dremio Beta** (`dev.dremio.flutter`), so it sits alongside the older Java Dremio rather than replacing it.
+
+### Installing on a Fire TV
+
+1. On the TV: **Settings → My Fire TV → Developer options**, turn on **ADB debugging** (and **Apps from Unknown Sources**). If Developer options is hidden, open **About** and press Select on the device name seven times.
+2. Find the TV's IP address under **Settings → My Fire TV → About → Network**.
+3. From the computer, using `adb` (included in the Android SDK's `platform-tools`):
+
+   ```sh
+   adb connect <tv-ip>:5555
+   adb install -r build/app/outputs/flutter-apk/app-release.apk
+   ```
+
+   Approve the debugging prompt on the TV the first time. **Dremio Beta** then appears in Apps.
+
+### Signing
+
+Release APKs are currently signed with the Android debug key. That's fine for sideloading, but an update has to be signed with the same key, so building on a different computer means uninstalling the old copy first. Before publishing to a store, add a real signing config in `android/app/build.gradle.kts`.
+
+## Low disk space
+
+Builds need several GB of temporary space (Gradle and Xcode caches). If a build fails with "Insufficient space" or "No space left on device", `flutter clean` clears this project's build output.

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="72dp" android:height="108dp" android:viewportWidth="48" android:viewportHeight="72">
+ <group android:name="shadow" android:pivotX="24" android:pivotY="68">
+  <path android:name="glow" android:pathData="M14,68a10,1.8 0 1,0 20,0a10,1.8 0 1,0 -20,0Z" android:fillColor="#bdff59" android:fillAlpha="0.2"/>
+ </group>
+ <group android:name="ufo" android:pivotX="24" android:pivotY="36">
+  <group android:translateY="8">
+   <path android:pathData="M39.893,19.55C45.597,30.278 43.106,42.758 34.328,47.425C25.551,52.092 12.811,50.179 8.107,36.45C4.169,24.956 4.894,13.242 13.672,8.575C22.449,3.908 34.189,8.821 39.893,19.55Z" android:fillColor="#00000000" android:strokeColor="#bdff59" android:strokeWidth="4"/>
+   <group android:translateX="2.0" android:translateY="1.0">
+    <path android:pathData="M20.16,17.32C24.53,20.32 29.383,38.309 20.16,39.96C9.912,41.795 12.306,18.718 15.303,17.404C16.882,16.711 19.231,16.682 20.16,17.32ZM36,28C36,30.37 34.05,32.32 31.68,32.32C29.31,32.32 25.36,28.37 25.36,26C25.36,23.63 26.31,20.68 28.68,20.68C31.05,20.68 36,25.63 36,28Z" android:fillColor="#bdff59"/>
+   </group>
+  </group>
+ </group>
+</vector>
