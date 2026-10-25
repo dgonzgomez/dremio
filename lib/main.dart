@@ -126,26 +126,40 @@ class DremioApp extends StatefulWidget {
 class _DremioAppState extends State<DremioApp> {
   bool _onKey(KeyEvent event) {
     Activity.touch();
-    if (desktop &&
-        event is KeyDownEvent &&
-        HardwareKeyboard.instance.isAltPressed &&
-        (event.logicalKey == LogicalKeyboardKey.enter ||
-            event.logicalKey == LogicalKeyboardKey.numpadEnter)) {
-      FullScreen.toggle();
-      return true;
-    }
     return false;
   }
+
+  /// Runs before the focused widget sees the key, so Alt+Enter never also presses the focused button.
+  KeyEventResult _fullScreenKey(KeyEvent event) {
+    final enter =
+        event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.numpadEnter;
+    if (!enter) return KeyEventResult.ignored;
+    if (event is KeyDownEvent && HardwareKeyboard.instance.isAltPressed) {
+      _swallowEnter = true;
+      FullScreen.toggle();
+      return KeyEventResult.handled;
+    }
+    if (!_swallowEnter) return KeyEventResult.ignored;
+    if (event is KeyUpEvent) _swallowEnter = false;
+    return KeyEventResult.handled;
+  }
+
+  bool _swallowEnter = false;
 
   @override
   void initState() {
     super.initState();
     HardwareKeyboard.instance.addHandler(_onKey);
+    if (desktop) FocusManager.instance.addEarlyKeyEventHandler(_fullScreenKey);
   }
 
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_onKey);
+    if (desktop) {
+      FocusManager.instance.removeEarlyKeyEventHandler(_fullScreenKey);
+    }
     super.dispose();
   }
 
