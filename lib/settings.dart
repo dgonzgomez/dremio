@@ -30,6 +30,11 @@ class _SettingsPageState extends State<SettingsPage> {
     currentVersion().then((v) {
       if (mounted) setState(() => version = v);
     });
+    lastUpdateFailure().then((reason) {
+      if (reason != null && mounted) {
+        setState(() => updateStatus = 'The last update didn’t finish ($reason). Try again or download it from GitHub.');
+      }
+    });
   }
 
   Future<void> checkForUpdate() async {

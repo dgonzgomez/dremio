@@ -80,6 +80,14 @@ Future<String?> install(File file, String version) async {
     return started ? 'Confirm the install on screen.' : 'Allow Dremio to install apps, then try again.';
   }
   if (Platform.isWindows) {
+    final folder = File(Platform.resolvedExecutable).parent;
+    try {
+      final probe = File('${folder.path}/.dremio-update-check');
+      await probe.writeAsString('');
+      await probe.delete();
+    } on FileSystemException {
+      return 'Dremio can’t update itself in ${folder.path}. Move the Dremio folder somewhere like Documents, or download the new zip from GitHub.';
+    }
     final script = File('${file.parent.path}/update.ps1');
     await script.writeAsString(_windowsScript);
     await Process.start('powershell.exe', [
@@ -95,7 +103,9 @@ Future<String?> install(File file, String version) async {
       '-Zip',
       file.path,
       '-Target',
-      File(Platform.resolvedExecutable).parent.path,
+      folder.path,
+      '-Log',
+      _windowsLog.path,
       '-Exe',
       Platform.resolvedExecutable,
     ], mode: ProcessStartMode.detached);
@@ -114,14 +124,47 @@ Future<String?> install(File file, String version) async {
   return 'Dremio $version is in Downloads. Quit Dremio and drag the new app into Applications to replace it.';
 }
 
+/// Written by the Windows update script when it fails; read and cleared by [lastUpdateFailure].
+File get _windowsLog => File('${Directory.systemTemp.path}/dremio-update.log');
+
+/// Why the last Windows update didn't finish, if it didn't.
+Future<String?> lastUpdateFailure() async {
+  if (!Platform.isWindows) return null;
+  try {
+    final log = _windowsLog;
+    if (!await log.exists()) return null;
+    final reason = (await log.readAsString()).trim();
+    await log.delete();
+    return reason.isEmpty ? 'unknown error' : reason;
+  } catch (_) {
+    return null;
+  }
+}
+
+// Always relaunches Dremio, old or new. Files can stay locked for a moment after exit, so copying retries.
 const _windowsScript = r'''
-param([int]$ProcessId, [string]$Zip, [string]$Target, [string]$Exe)
+param([int]$ProcessId, [string]$Zip, [string]$Target, [string]$Exe, [string]$Log)
 $ErrorActionPreference = 'Stop'
-Wait-Process -Id $ProcessId -ErrorAction SilentlyContinue
-$staging = Join-Path ([IO.Path]::GetTempPath()) ('dremio-update-' + [guid]::NewGuid())
-Expand-Archive -LiteralPath $Zip -DestinationPath $staging -Force
-Copy-Item -Path (Join-Path $staging '*') -Destination $Target -Recurse -Force
-Remove-Item -LiteralPath $staging -Recurse -Force
-Remove-Item -LiteralPath $Zip -Force
-Start-Process -FilePath $Exe
+try {
+  Wait-Process -Id $ProcessId -Timeout 30 -ErrorAction SilentlyContinue
+  $staging = Join-Path ([IO.Path]::GetTempPath()) ('dremio-update-' + [guid]::NewGuid())
+  Expand-Archive -LiteralPath $Zip -DestinationPath $staging -Force
+  $copied = $false
+  for ($i = 0; $i -lt 20 -and -not $copied; $i++) {
+    try {
+      Copy-Item -Path (Join-Path $staging '*') -Destination $Target -Recurse -Force
+      $copied = $true
+    } catch {
+      $last = $_
+      Start-Sleep -Milliseconds 500
+    }
+  }
+  if (-not $copied) { throw $last }
+  Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $Zip -Force -ErrorAction SilentlyContinue
+} catch {
+  "$($_.Exception.Message)" | Out-File -FilePath $Log -Encoding utf8
+} finally {
+  Start-Process -FilePath $Exe
+}
 ''';

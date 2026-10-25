@@ -96,6 +96,10 @@ Builds need several GB of temporary space (Gradle and Xcode caches). If a build 
 
 ## What's new
 
+### 0.5.6
+
+- Windows updates: Dremio checks it can write to its folder before closing, retries files Windows still has locked, always reopens afterwards, and explains in Settings if an update didn't finish.
+
 ### 0.5.5
 
 - Mac and Windows: the window scales to the display, reading the usable screen area with display scaling (e.g. 125%) applied. Screens too small for 1440x900 open maximized; larger ones get about 75% of the screen.
