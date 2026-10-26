@@ -114,6 +114,7 @@ class _PlayerPageState extends State<PlayerPage> with WindowListener {
         }
         completed = true;
         store.saveProgress(widget.video, 0, 0);
+        if (type == 'movie') store.setString('lb:finished', widget.video);
         _exit();
       }),
       player.stream.buffering.listen((b) {

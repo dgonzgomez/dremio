@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import 'browse.dart';
+import 'letterboxd.dart';
 import 'main.dart';
+import 'orbit.dart';
 import 'store.dart';
 import 'streams.dart';
 import 'theme.dart';
@@ -22,6 +24,155 @@ class _SettingsPageState extends State<SettingsPage> {
   String feedback = '', version = '', updateStatus = '';
   Release? available;
   double? progress;
+
+  final lb = Letterboxd.instance;
+  final lbName = TextEditingController();
+
+  /// 'me' while linking your account, 'friend' while adding one.
+  String? lbEditing;
+  String lbFeedback = '';
+  bool lbBusy = false;
+
+  void lbEdit(String? mode) => setState(() {
+    lbEditing = mode;
+    lbFeedback = '';
+    lbName.clear();
+  });
+
+  Future<void> lbSubmit() async {
+    var name = lbName.text.trim().replaceFirst(RegExp(r'^https?://(www\.)?letterboxd\.com/'), '').replaceFirst('@', '');
+    name = name.split('/').first;
+    if (!Letterboxd.validUsername(name)) {
+      setState(() => lbFeedback = 'That isn’t a Letterboxd username.');
+      return;
+    }
+    setState(() {
+      lbBusy = true;
+      lbFeedback = 'Checking…';
+    });
+    try {
+      lbEditing == 'me' ? await lb.link(name) : await lb.addFriend(name);
+      if (!mounted) return;
+      lbBusy = false;
+      lbEdit(null);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          lbBusy = false;
+          lbFeedback = e is LetterboxdMissing ? 'No public Letterboxd profile called $name.' : 'Couldn’t reach Letterboxd.';
+        });
+      }
+    }
+  }
+
+  Future<void> lbImport() async {
+    setState(() {
+      lbBusy = true;
+      lbFeedback = 'Bringing in who you follow…';
+    });
+    try {
+      final added = await lb.importFollowing();
+      if (mounted) setState(() => lbFeedback = added == 0 ? 'No one new to add.' : 'Added $added ${added == 1 ? 'friend' : 'friends'}.');
+    } catch (_) {
+      if (mounted) setState(() => lbFeedback = 'Couldn’t reach Letterboxd.');
+    }
+    if (mounted) setState(() => lbBusy = false);
+  }
+
+  List<Widget> _letterboxd() {
+    final me = lb.me;
+    return [
+      const SizedBox(height: 34),
+      Text('Letterboxd', style: text(13, color: muted)),
+      const SizedBox(height: 12),
+      if (me != null) ...[
+        Row(
+          children: [
+            Avatar(me, size: 36),
+            const SizedBox(width: 12),
+            Flexible(child: Text('${me.name}  ·  @${me.username}', style: text(15))),
+          ],
+        ),
+        const SizedBox(height: 14),
+      ],
+      if (lbEditing != null) ...[
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Container(
+            height: 54,
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            decoration: BoxDecoration(color: const Color(0xff1b2b20), borderRadius: BorderRadius.circular(14)),
+            alignment: Alignment.centerLeft,
+            child: TextField(
+              controller: lbName,
+              autofocus: true,
+              autocorrect: false,
+              cursorColor: green,
+              style: text(14),
+              decoration: InputDecoration.collapsed(
+                hintText: lbEditing == 'me' ? 'Your Letterboxd username' : 'Friend’s Letterboxd username',
+                hintStyle: text(14, color: muted),
+              ),
+              onSubmitted: (_) => lbSubmit(),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Pill(label: lbEditing == 'me' ? 'Link' : 'Add', primary: true, height: 42, onTap: lbBusy ? () {} : lbSubmit),
+            const SizedBox(width: 12),
+            Pill(label: 'Cancel', height: 42, onTap: () => lbEdit(null)),
+          ],
+        ),
+      ] else
+        Row(
+          children: [
+            if (me == null)
+              Pill(label: 'Link account', height: 42, onTap: () => lbEdit('me'))
+            else ...[
+              Pill(label: 'Add friend', height: 42, onTap: () => lbEdit('friend')),
+              const SizedBox(width: 12),
+              Pill(label: 'Import who I follow', height: 42, onTap: lbBusy ? () {} : lbImport),
+              const SizedBox(width: 12),
+              Pill(
+                label: 'Unlink',
+                height: 42,
+                onTap: () async {
+                  if (await confirm('Unlink Letterboxd?', 'Unlink')) setState(lb.unlink);
+                },
+              ),
+            ],
+          ],
+        ),
+      if (lbFeedback.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Text(lbFeedback, style: text(13, color: muted)),
+        ),
+      if (me != null && lb.friends.isNotEmpty) ...[
+        const SizedBox(height: 18),
+        Text('Friends  ·  select one to remove it', style: text(13, color: muted)),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            for (final f in lb.friends)
+              Pill(
+                label: f.name,
+                height: 38,
+                onTap: () async {
+                  if (await confirm('Remove ${f.name} from your orbit?', 'Remove')) setState(() => lb.removeFriend(f.username));
+                },
+              ),
+          ],
+        ),
+      ],
+      const SizedBox(height: 12),
+      Text('Your diary needs to be public. Dremio only reads it; logging and rating happen on Letterboxd.', style: text(12, color: muted)),
+    ];
+  }
 
   @override
   void initState() {
@@ -99,6 +250,7 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   void dispose() {
     link.dispose();
+    lbName.dispose();
     super.dispose();
   }
 
@@ -239,6 +391,7 @@ class _SettingsPageState extends State<SettingsPage> {
             const SizedBox(height: 26),
             Text('Sources', style: text(13, color: muted)),
             for (final source in sources) ..._source(source),
+            ..._letterboxd(),
             const SizedBox(height: 34),
             Text('Resolution', style: text(13, color: muted)),
             const SizedBox(height: 10),

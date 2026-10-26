@@ -363,6 +363,9 @@ class Artwork extends StatelessWidget {
 
 String posterOf(Meta m) => str(m, 'poster').startsWith('https://') ? str(m, 'poster') : str(m, 'background');
 
+/// Meta keys for a short line (and optional avatar) under a poster, e.g. a friend's rating in Orbit.
+const posterNoteKey = 'posterNote', posterAvatarKey = 'posterAvatar';
+
 class PosterCard extends StatelessWidget {
   const PosterCard({super.key, required this.meta, required this.width, required this.onOpen, this.showEpisode = false});
   final bool showEpisode;
@@ -426,6 +429,25 @@ class PosterCard extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: text(13, color: active ? white : const Color(0xffcdd8cd)),
             ),
+            if (meta[posterNoteKey] is String) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  if ('${meta[posterAvatarKey] ?? ''}'.isNotEmpty) ...[
+                    ClipOval(child: SizedBox(width: 16, height: 16, child: Artwork('${meta[posterAvatarKey]}', width: 16, radius: 8))),
+                    const SizedBox(width: 6),
+                  ],
+                  Expanded(
+                    child: Text(
+                      '${meta[posterNoteKey]}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: text(11, color: muted),
+                    ),
+                  ),
+                ],
+              ),
+            ],
             if (showEpisode && str(meta, 'type') == 'series' && progress.videoId.isNotEmpty) ...[
               const SizedBox(height: 4),
               Text(
@@ -488,7 +510,7 @@ class _ShelfState extends State<Shelf> {
     final items = (widget.filter ? Catalog.instance.playable(widget.items) : widget.items).take(20).toList();
     if (items.isEmpty) return const SizedBox.shrink();
     final width = posterWidth(context);
-    final height = width * 1.48 + 34 + (widget.continueWatching ? 20 : 0);
+    final height = width * 1.48 + 34 + (widget.continueWatching || widget.items.any((m) => m[posterNoteKey] is String) ? 20 : 0);
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),

@@ -7,8 +7,10 @@ import 'package:window_manager/window_manager.dart';
 
 import 'artwork_cache.dart';
 import 'catalog.dart';
+import 'letterboxd.dart';
 import 'remote_navigation.dart';
 import 'main.dart';
+import 'orbit.dart';
 import 'routes.dart';
 import 'store.dart';
 import 'theme.dart';
@@ -27,6 +29,10 @@ class Shell extends StatelessWidget {
       child: Screen(
         child: page == 'My List'
             ? const LibraryView()
+            : page == 'Orbit'
+            ? const OrbitView()
+            : page == 'History'
+            ? const HistoryView()
             : page.startsWith('Lookback:')
             ? LookbackView(key: ValueKey(page), decade: int.parse(page.substring(9)))
             : BrowseView(key: ValueKey(page), page: page),
@@ -109,7 +115,7 @@ class _SideRailState extends State<SideRail> {
           children: [
             if (canPop) _RailItem(open: open, icon: const Icon(Icons.arrow_back_rounded), label: 'Back', onTap: goBack),
             _RailItem(open: open, icon: const Icon(Icons.search), label: 'Search', onTap: () => openSearch(context)),
-            for (final (tab, icon) in const [('Home', Icons.home_rounded), ('Movies', Icons.movie_outlined), ('Series', Icons.tv_rounded)])
+            for (final (tab, icon) in const [('Home', Icons.home_rounded), ('Orbit', Icons.public_rounded), ('Movies', Icons.movie_outlined), ('Series', Icons.tv_rounded)])
               _RailItem(open: open, icon: Icon(icon), label: tab, selected: selected(tab), onTap: () => _tab(tab)),
             _RailItem(
               open: open,
@@ -172,6 +178,20 @@ class _SideRailState extends State<SideRail> {
                     onTap: () {
                       setState(() => decades = false);
                       _tab('Home');
+                    },
+                  ),
+                  const SizedBox(height: 6),
+                  ValueListenableBuilder<int>(
+                    valueListenable: Letterboxd.instance.changes,
+                    builder: (context, _, _) {
+                      final me = Letterboxd.instance.me;
+                      return _RailItem(
+                        open: open,
+                        icon: me == null ? const Icon(Icons.account_circle_outlined) : Avatar(me, size: 30),
+                        label: me?.name ?? 'Link Letterboxd',
+                        selected: selected('History'),
+                        onTap: me == null ? () => openSettings(context) : () => _tab('History'),
+                      );
                     },
                   ),
                   Expanded(

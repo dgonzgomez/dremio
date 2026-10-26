@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import 'browse.dart';
 import 'catalog.dart';
+import 'letterboxd.dart';
 import 'net.dart';
+import 'orbit.dart';
 import 'routes.dart';
 import 'remote_navigation.dart';
 import 'store.dart';
@@ -19,14 +21,10 @@ class DetailPage extends StatefulWidget {
 }
 
 class _DetailPageState extends State<DetailPage> {
-  late Meta meta = {
-    ...?Store.instance.recalled(str(widget.meta, 'id')),
-    ...widget.meta,
-  };
+  late Meta meta = {...?Store.instance.recalled(str(widget.meta, 'id')), ...widget.meta};
   late String? resumeVideo = widget.resumeVideo;
   bool get episodeView => series && (resumeVideo?.isNotEmpty ?? false);
-  WatchProgress get progress =>
-      Store.instance.progress(meta, video: resumeVideo);
+  WatchProgress get progress => Store.instance.progress(meta, video: resumeVideo);
   bool loading = true, failed = false;
   int? season;
   bool get series => str(meta, 'type') == 'series';
@@ -43,11 +41,7 @@ class _DetailPageState extends State<DetailPage> {
       failed = false;
     });
     try {
-      final full = Map<String, dynamic>.from(
-        (await getJson(
-          '$cinemeta/meta/${Uri.encodeComponent(str(meta, 'type'))}/${Uri.encodeComponent(str(meta, 'id'))}.json',
-        ))['meta'],
-      );
+      final full = Map<String, dynamic>.from((await getJson('$cinemeta/meta/${Uri.encodeComponent(str(meta, 'type'))}/${Uri.encodeComponent(str(meta, 'id'))}.json'))['meta']);
       if (series) await _summaries(full);
       if (!mounted) return;
       setState(() {
@@ -74,30 +68,15 @@ class _DetailPageState extends State<DetailPage> {
   /// Cinemeta often lacks episode synopses; TVmaze fills the gaps.
   Future<void> _summaries(Meta show) async {
     final videos = show['videos'];
-    if (videos is! List ||
-        !videos.any(
-          (v) =>
-              v is Map &&
-              (v['season'] ?? 0) > 0 &&
-              '${v['overview'] ?? ''}'.isEmpty,
-        )) {
+    if (videos is! List || !videos.any((v) => v is Map && (v['season'] ?? 0) > 0 && '${v['overview'] ?? ''}'.isEmpty)) {
       return;
     }
     try {
-      final found = await getJson(
-        'https://api.tvmaze.com/lookup/shows?imdb=${Uri.encodeComponent(str(show, 'id'))}',
-      );
-      final episodes = await getJson(
-        'https://api.tvmaze.com/shows/${found['id']}/episodes',
-      );
+      final found = await getJson('https://api.tvmaze.com/lookup/shows?imdb=${Uri.encodeComponent(str(show, 'id'))}');
+      final episodes = await getJson('https://api.tvmaze.com/shows/${found['id']}/episodes');
       final text = <String, String>{};
       for (final e in episodes is List ? episodes : const []) {
-        final summary = '${e['summary'] ?? ''}'
-            .replaceAll(RegExp(r'<[^>]+>'), '')
-            .replaceAll('&amp;', '&')
-            .replaceAll('&quot;', '"')
-            .replaceAll('&#39;', "'")
-            .trim();
+        final summary = '${e['summary'] ?? ''}'.replaceAll(RegExp(r'<[^>]+>'), '').replaceAll('&amp;', '&').replaceAll('&quot;', '"').replaceAll('&#39;', "'").trim();
         if (summary.isNotEmpty && summary != 'null') {
           text['${e['season']}:${e['number']}'] = summary;
         }
@@ -116,33 +95,18 @@ class _DetailPageState extends State<DetailPage> {
     return r == null || !r.isAfter(DateTime.now());
   }
 
-  List<Map> _videos() =>
-      (meta['videos'] is List ? meta['videos'] as List : const [])
-          .whereType<Map>()
-          .where((v) => '${v['id'] ?? ''}'.isNotEmpty && _aired(v))
-          .toList();
+  List<Map> _videos() => (meta['videos'] is List ? meta['videos'] as List : const []).whereType<Map>().where((v) => '${v['id'] ?? ''}'.isNotEmpty && _aired(v)).toList();
 
   List<int> _seasons() {
-    final s =
-        _videos()
-            .map((v) => (v['season'] as num?)?.toInt() ?? 0)
-            .where((s) => s > 0)
-            .toSet()
-            .toList()
-          ..sort();
+    final s = _videos().map((v) => (v['season'] as num?)?.toInt() ?? 0).where((s) => s > 0).toSet().toList()..sort();
     return s.isEmpty && _videos().isNotEmpty ? [0] : s;
   }
 
   String? _firstEpisode() {
     Map? best;
     for (final v in _videos()) {
-      final s = (v['season'] as num?)?.toInt() ?? 0,
-          bs = (best?['season'] as num?)?.toInt() ?? 0;
-      if (best == null ||
-          (s > 0 && (bs == 0 || s < bs)) ||
-          (s == bs &&
-              ((v['episode'] as num?) ?? 0) <
-                  ((best['episode'] as num?) ?? 0))) {
+      final s = (v['season'] as num?)?.toInt() ?? 0, bs = (best?['season'] as num?)?.toInt() ?? 0;
+      if (best == null || (s > 0 && (bs == 0 || s < bs)) || (s == bs && ((v['episode'] as num?) ?? 0) < ((best['episode'] as num?) ?? 0))) {
         best = v;
       }
     }
@@ -152,12 +116,15 @@ class _DetailPageState extends State<DetailPage> {
   Future<void> _playVideo(String video) async {
     await play(context, meta, video);
     if (!mounted) return;
+    final store = Store.instance;
+    if (store.getString('lb:finished') == video) {
+      store.setString('lb:finished', '');
+      await promptLog(context, meta);
+      if (!mounted) return;
+    }
     setState(() {
       if (episodeView) {
-        resumeVideo = Store.instance.getString(
-          'video:${str(meta, "id")}',
-          video,
-        );
+        resumeVideo = Store.instance.getString('video:${str(meta, "id")}', video);
       }
     });
   }
@@ -192,42 +159,29 @@ class _DetailPageState extends State<DetailPage> {
               },
             ),
             const SizedBox(width: 14),
-            Pill(
-              icon: saved ? Icons.check_rounded : Icons.add_rounded,
-              label: saved ? 'In My List' : 'My List',
-              onTap: () => setState(() => Store.instance.toggleSaved(meta)),
-            ),
+            Pill(icon: saved ? Icons.check_rounded : Icons.add_rounded, label: saved ? 'In My List' : 'My List', onTap: () => setState(() => Store.instance.toggleSaved(meta))),
+            if (!series && Letterboxd.instance.linked) ...[
+              const SizedBox(width: 14),
+              Pill(
+                icon: Icons.star_outline_rounded,
+                label: 'Log on Letterboxd',
+                onTap: () => openLetterboxd(context, Letterboxd.film(str(meta, 'id')), title: 'Log ${str(meta, 'name')}'),
+              ),
+            ],
           ],
         ),
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (!series &&
-                meta['cast'] is List &&
-                (meta['cast'] as List).isNotEmpty)
+            if (!series && meta['cast'] is List && (meta['cast'] as List).isNotEmpty)
               Padding(
-                padding: EdgeInsets.fromLTRB(
-                  gutter(context),
-                  0,
-                  gutter(context),
-                  24,
-                ),
-                child: Text(
-                  'Starring  ${(meta['cast'] as List).take(4).join(' · ')}',
-                  style: text(13, color: muted),
-                ),
+                padding: EdgeInsets.fromLTRB(gutter(context), 0, gutter(context), 24),
+                child: Text('Starring  ${(meta['cast'] as List).take(4).join(' · ')}', style: text(13, color: muted)),
               ),
             if (series) ..._episodes(context),
-            if (Catalog.instance.similar(meta) case final more
-                when more.isNotEmpty) ...[
+            if (Catalog.instance.similar(meta) case final more when more.isNotEmpty) ...[
               SizedBox(height: series ? 44 : 12),
-              Shelf(
-                title: 'More Like This',
-                items: more,
-                filter: false,
-                wheel: true,
-                onOpen: (m) => openDetail(context, m),
-              ),
+              Shelf(title: 'More Like This', items: more, filter: false, wheel: true, onOpen: (m) => openDetail(context, m)),
             ],
             const SizedBox(height: 60),
           ],
@@ -257,23 +211,14 @@ class _DetailPageState extends State<DetailPage> {
         ),
       ];
     }
-    final episodes =
-        _videos()
-            .where((v) => ((v['season'] as num?)?.toInt() ?? 0) == season)
-            .toList()
-          ..sort(
-            (a, b) => ((a['episode'] as num?) ?? 0).compareTo(
-              (b['episode'] as num?) ?? 0,
-            ),
-          );
+    final episodes = _videos().where((v) => ((v['season'] as num?)?.toInt() ?? 0) == season).toList()..sort((a, b) => ((a['episode'] as num?) ?? 0).compareTo((b['episode'] as num?) ?? 0));
     final width = MediaQuery.sizeOf(context).width;
     final columns = width < 1100
         ? 3
         : width < 1700
         ? 4
         : 5;
-    final cardWidth =
-        (width - gutter(context) * 2 - (columns - 1) * 18) / columns;
+    final cardWidth = (width - gutter(context) * 2 - (columns - 1) * 18) / columns;
     return [
       SizedBox(
         height: 66,
@@ -284,12 +229,7 @@ class _DetailPageState extends State<DetailPage> {
             for (final s in _seasons())
               Padding(
                 padding: const EdgeInsets.only(right: 12),
-                child: Pill(
-                  label: 'Season $s',
-                  primary: s == season,
-                  height: 42,
-                  onTap: () => setState(() => season = s),
-                ),
+                child: Pill(label: 'Season $s', primary: s == season, height: 42, onTap: () => setState(() => season = s)),
               ),
           ],
         ),
@@ -297,22 +237,11 @@ class _DetailPageState extends State<DetailPage> {
       Padding(
         padding: EdgeInsets.fromLTRB(gutter(context), 14, gutter(context), 0),
         child: episodes.isEmpty
-            ? Text(
-                'No released episodes in this season.',
-                style: text(14, color: muted),
-              )
+            ? Text('No released episodes in this season.', style: text(14, color: muted))
             : Wrap(
                 spacing: 18,
                 runSpacing: 26,
-                children: [
-                  for (final v in episodes)
-                    _EpisodeCard(
-                      show: meta,
-                      video: v,
-                      width: cardWidth,
-                      onPlay: () => _playVideo('${v['id']}'),
-                    ),
-                ],
+                children: [for (final v in episodes) _EpisodeCard(show: meta, video: v, width: cardWidth, onPlay: () => _playVideo('${v['id']}'))],
               ),
       ),
     ];
@@ -320,12 +249,7 @@ class _DetailPageState extends State<DetailPage> {
 }
 
 class _EpisodeCard extends StatelessWidget {
-  const _EpisodeCard({
-    required this.show,
-    required this.video,
-    required this.width,
-    required this.onPlay,
-  });
+  const _EpisodeCard({required this.show, required this.video, required this.width, required this.onPlay});
   final VoidCallback onPlay;
   final Meta show;
   final Map video;
@@ -338,8 +262,7 @@ class _EpisodeCard extends StatelessWidget {
     final number = video['episode'] ?? '';
     final name = '${video['name'] ?? video['title'] ?? 'Episode $number'}';
     final about = '${video['overview'] ?? video['description'] ?? ''}';
-    final progress = Store.instance.getInt('position:${video['id']}'),
-        length = Store.instance.getInt('duration:${video['id']}');
+    final progress = Store.instance.getInt('position:${video['id']}'), length = Store.instance.getInt('duration:${video['id']}');
     return SizedBox(
       width: width,
       child: Lift(
@@ -361,15 +284,8 @@ class _EpisodeCard extends StatelessWidget {
                       right: 0,
                       bottom: 0,
                       child: ClipRRect(
-                        borderRadius: const BorderRadius.vertical(
-                          bottom: Radius.circular(7),
-                        ),
-                        child: LinearProgressIndicator(
-                          value: (progress / length).clamp(0, 1),
-                          minHeight: 3,
-                          color: green,
-                          backgroundColor: const Color(0x55070c09),
-                        ),
+                        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(7)),
+                        child: LinearProgressIndicator(value: (progress / length).clamp(0, 1), minHeight: 3, color: green, backgroundColor: const Color(0x55070c09)),
                       ),
                     ),
                 ],
@@ -380,11 +296,7 @@ class _EpisodeCard extends StatelessWidget {
               '$number.  $name',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: text(
-                14,
-                weight: FontWeight.w500,
-                color: active ? green : white,
-              ),
+              style: text(14, weight: FontWeight.w500, color: active ? green : white),
             ),
             if (about.isNotEmpty) ...[
               const SizedBox(height: 5),

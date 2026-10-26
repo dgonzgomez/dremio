@@ -96,6 +96,12 @@ Builds need several GB of temporary space (Gradle and Xcode caches). If a build 
 
 ## What's new
 
+### 0.6.2
+
+- Letterboxd: link your account in Settings by username (your diary must be public). Your avatar and name sit under the logo in the sidebar and open your History: what you've played in Dremio, your Letterboxd diary and your favorites.
+- Orbit, a new tab under Home: what your friends have been watching, with their ratings on the posters, and a blend with each friend (a match score, films they loved that you haven't seen, and films you both loved), based on each person's last 50 diary entries. Import who you follow on Letterboxd or add friends by username.
+- Log on Letterboxd: movie pages have a button for it, and finishing a movie offers to log and rate it. On Mac and Windows it opens in your browser; on Fire TV it shows a QR code to scan with your phone.
+
 ### 0.6.1
 
 - Fire TV: the left sidebar replaces the top bar. Press Left from the start of a row to open it; Lookback works with the remote too.
