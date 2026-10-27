@@ -4,23 +4,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
 
+/// Scrolls the last shelf back to its first poster. Dismissing the rail calls this so we don't land on a leftover visible card.
+Future<void> Function()? lastRowRestore;
+
 /// The hero stays mounted; shelves remain lazy. Offscreen destinations are
 /// rebuilt by scrolling to their known extent before requesting remote focus.
 class RemoteBrowseList extends StatefulWidget {
-  const RemoteBrowseList({
-    super.key,
-    required this.hero,
-    required this.shelves,
-    required this.heroExtent,
-    required this.shelfExtent,
-    this.shelfExtras = const [],
-  });
+  const RemoteBrowseList({super.key, required this.hero, required this.shelves, required this.heroExtent, required this.shelfExtent, this.shelfExtras = const []});
   final Widget hero;
   final List<Widget> shelves;
   final double heroExtent, shelfExtent;
   final List<double> shelfExtras;
-  double rowExtent(int index) =>
-      shelfExtent + (index < shelfExtras.length ? shelfExtras[index] : 0);
+  double rowExtent(int index) => shelfExtent + (index < shelfExtras.length ? shelfExtras[index] : 0);
   @override
   State<RemoteBrowseList> createState() => _RemoteBrowseListState();
 }
@@ -33,13 +28,7 @@ class _RemoteBrowseListState extends State<RemoteBrowseList> {
 
   FocusNode row(int index) {
     while (rows.length <= index) {
-      rows.add(
-        FocusNode(
-          debugLabel: 'Browse row ${rows.length}',
-          skipTraversal: true,
-          canRequestFocus: false,
-        ),
-      );
+      rows.add(FocusNode(debugLabel: 'Browse row ${rows.length}', skipTraversal: true, canRequestFocus: false));
     }
     return rows[index];
   }
@@ -62,9 +51,7 @@ class _RemoteBrowseListState extends State<RemoteBrowseList> {
       return KeyEventResult.ignored;
     }
     final primary = FocusManager.instance.primaryFocus;
-    final from = primary == null
-        ? -1
-        : rows.indexWhere(primary.ancestors.contains);
+    final from = primary == null ? -1 : rows.indexWhere(primary.ancestors.contains);
     if (from < 0) return KeyEventResult.ignored;
     final target = from + (up ? -1 : 1);
     if (target < 0) {
@@ -82,38 +69,15 @@ class _RemoteBrowseListState extends State<RemoteBrowseList> {
   Future<void> move(int index, double x) async {
     moving = true;
     try {
-      final offset = index == 0
-          ? 0.0
-          : widget.heroExtent +
-                List.generate(
-                  index - 1,
-                  widget.rowExtent,
-                ).fold<double>(0, (sum, h) => sum + h) -
-                118;
-      await scroll.animateTo(
-        offset.clamp(0, scroll.position.maxScrollExtent),
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeOutCubic,
-      );
+      final offset = index == 0 ? 0.0 : widget.heroExtent + List.generate(index - 1, widget.rowExtent).fold<double>(0, (sum, h) => sum + h) - 90;
+      await scroll.animateTo(offset.clamp(0, scroll.position.maxScrollExtent), duration: const Duration(milliseconds: 200), curve: Curves.easeOutCubic);
       if (!mounted) return;
       await WidgetsBinding.instance.endOfFrame;
       if (!mounted) return;
       final width = MediaQuery.sizeOf(context).width;
-      final targets = row(index).traversalDescendants
-          .where(
-            (n) =>
-                n.context != null &&
-                n.traversalDescendants.isEmpty &&
-                n.rect.right > 0 &&
-                n.rect.left < width,
-          )
-          .toList();
+      final targets = row(index).traversalDescendants.where((n) => n.context != null && n.traversalDescendants.isEmpty && n.rect.right > 0 && n.rect.left < width).toList();
       if (index > 0) {
-        targets.sort(
-          (a, b) => (a.rect.center.dx - x).abs().compareTo(
-            (b.rect.center.dx - x).abs(),
-          ),
-        );
+        targets.sort((a, b) => (a.rect.center.dx - x).abs().compareTo((b.rect.center.dx - x).abs()));
       }
       if (targets.isNotEmpty) targets.first.requestFocus();
     } finally {
@@ -149,8 +113,7 @@ class _RemoteBrowseListState extends State<RemoteBrowseList> {
               focusNode: row(0),
               child: ValueListenableBuilder<bool>(
                 valueListenable: heroVisible,
-                builder: (_, visible, child) =>
-                    TickerMode(enabled: visible, child: child!),
+                builder: (_, visible, child) => TickerMode(enabled: visible, child: child!),
                 child: widget.hero,
               ),
             ),
@@ -158,8 +121,7 @@ class _RemoteBrowseListState extends State<RemoteBrowseList> {
           SliverVariedExtentList(
             itemExtentBuilder: (index, _) => widget.rowExtent(index),
             delegate: SliverChildBuilderDelegate(
-              (context, i) =>
-                  Focus(focusNode: row(i + 1), child: widget.shelves[i]),
+              (context, i) => Focus(focusNode: row(i + 1), child: widget.shelves[i]),
               childCount: widget.shelves.length,
             ),
           ),
@@ -191,16 +153,10 @@ KeyEventResult playerControlStep(
     } else if (!bottom.any((n) => n.hasFocus)) {
       request(video);
     }
-  } else if (key == LogicalKeyboardKey.arrowLeft ||
-      key == LogicalKeyboardKey.arrowRight) {
+  } else if (key == LogicalKeyboardKey.arrowLeft || key == LogicalKeyboardKey.arrowRight) {
     final from = bottom.indexWhere((n) => n.hasFocus);
     if (from >= 0) {
-      request(
-        bottom[(from + (key == LogicalKeyboardKey.arrowLeft ? -1 : 1)).clamp(
-          0,
-          bottom.length - 1,
-        )],
-      );
+      request(bottom[(from + (key == LogicalKeyboardKey.arrowLeft ? -1 : 1)).clamp(0, bottom.length - 1)]);
     }
   } else {
     return KeyEventResult.ignored;
@@ -211,16 +167,7 @@ KeyEventResult playerControlStep(
 typedef RemoteVolumeKeys = RemoteSliderKeys;
 
 class RemoteSliderKeys extends StatefulWidget {
-  const RemoteSliderKeys({
-    super.key,
-    required this.focusNode,
-    required this.value,
-    required this.onChanged,
-    required this.child,
-    this.step = 5,
-    this.maximum = 100,
-    this.onActivate,
-  });
+  const RemoteSliderKeys({super.key, required this.focusNode, required this.value, required this.onChanged, required this.child, this.step = 5, this.maximum = 100, this.onActivate});
   final FocusNode focusNode;
   final double value, step, maximum;
   final VoidCallback? onActivate;
@@ -240,20 +187,15 @@ class _RemoteSliderKeysState extends State<RemoteSliderKeys> {
       if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
         return KeyEventResult.ignored;
       }
-      if (event.logicalKey == LogicalKeyboardKey.arrowLeft &&
-          widget.value > 0) {
+      if (event.logicalKey == LogicalKeyboardKey.arrowLeft && widget.value > 0) {
         widget.onChanged(math.max(0, widget.value - widget.step));
         return KeyEventResult.handled;
       }
-      if (event.logicalKey == LogicalKeyboardKey.arrowRight &&
-          widget.value < widget.maximum) {
+      if (event.logicalKey == LogicalKeyboardKey.arrowRight && widget.value < widget.maximum) {
         widget.onChanged(math.min(widget.maximum, widget.value + widget.step));
         return KeyEventResult.handled;
       }
-      if (widget.onActivate != null &&
-          (event.logicalKey == LogicalKeyboardKey.enter ||
-              event.logicalKey == LogicalKeyboardKey.select ||
-              event.logicalKey == LogicalKeyboardKey.space)) {
+      if (widget.onActivate != null && (event.logicalKey == LogicalKeyboardKey.enter || event.logicalKey == LogicalKeyboardKey.select || event.logicalKey == LogicalKeyboardKey.space)) {
         widget.onActivate!();
         return KeyEventResult.handled;
       }
@@ -272,8 +214,7 @@ class _FocusThumb extends SliderComponentShape {
   final bool focused;
 
   @override
-  Size getPreferredSize(bool isEnabled, bool isDiscrete) =>
-      const Size.fromRadius(14);
+  Size getPreferredSize(bool isEnabled, bool isDiscrete) => const Size.fromRadius(14);
 
   @override
   void paint(
@@ -290,14 +231,9 @@ class _FocusThumb extends SliderComponentShape {
     required double textScaleFactor,
     required Size sizeWithOverflow,
   }) {
-    final canvas = context.canvas,
-        color = sliderTheme.thumbColor ?? Colors.white;
+    final canvas = context.canvas, color = sliderTheme.thumbColor ?? Colors.white;
     if (focused) {
-      canvas.drawCircle(
-        center,
-        14,
-        Paint()..color = color.withValues(alpha: .3),
-      );
+      canvas.drawCircle(center, 14, Paint()..color = color.withValues(alpha: .3));
     }
     canvas.drawCircle(center, focused ? 8 : 6, Paint()..color = color);
   }
@@ -321,15 +257,7 @@ class _RemoteDetailListState extends State<RemoteDetailList> {
 
   List<FocusNode> targets(FocusNode parent) {
     final width = MediaQuery.sizeOf(context).width;
-    return parent.traversalDescendants
-        .where(
-          (n) =>
-              n.context != null &&
-              n.traversalDescendants.isEmpty &&
-              n.rect.right > 0 &&
-              n.rect.left < width,
-        )
-        .toList();
+    return parent.traversalDescendants.where((n) => n.context != null && n.traversalDescendants.isEmpty && n.rect.right > 0 && n.rect.left < width).toList();
   }
 
   KeyEventResult step(FocusNode node, KeyEvent event) {
@@ -342,31 +270,27 @@ class _RemoteDetailListState extends State<RemoteDetailList> {
     }
     final primary = FocusManager.instance.primaryFocus;
     if (primary == null) return KeyEventResult.ignored;
-    final inHero = primary.ancestors.contains(hero),
-        inBody = primary.ancestors.contains(body);
+    final inHero = primary.ancestors.contains(hero), inBody = primary.ancestors.contains(body);
     if (!inHero && !inBody) return KeyEventResult.ignored;
     if (moving) return KeyEventResult.handled;
-    if (inHero && up && scroll.offset <= 0) return KeyEventResult.ignored;
+    if (inHero) {
+      final rows = targets(hero).where((n) => up ? n.rect.top < primary.rect.top - 10 : n.rect.top > primary.rect.top + 10).toList()
+        ..sort((a, b) => (a.rect.top - primary.rect.top).abs().compareTo((b.rect.top - primary.rect.top).abs()));
+      if (rows.isNotEmpty) {
+        move(rows.first, toHero: true);
+        return KeyEventResult.handled;
+      }
+      if (up && scroll.offset <= 0) return KeyEventResult.ignored;
+    }
     final x = primary.rect.center.dx, y = primary.rect.top;
-    final options = targets(body)
-        .where(
-          (n) => inHero || (up ? n.rect.top < y - 10 : n.rect.top > y + 10),
-        )
-        .toList();
+    final options = targets(body).where((n) => inHero || (up ? n.rect.top < y - 10 : n.rect.top > y + 10)).toList();
     if (inHero && up || options.isEmpty && up) {
       final actions = targets(hero);
       if (actions.isNotEmpty) move(actions.first, toHero: true);
     } else if (options.isNotEmpty) {
       options.sort((a, b) => a.rect.top.compareTo(b.rect.top));
-      final rowY = inBody && up
-          ? options.last.rect.top
-          : options.first.rect.top;
-      final row = options.where((n) => (n.rect.top - rowY).abs() < 10).toList()
-        ..sort(
-          (a, b) => (a.rect.center.dx - x).abs().compareTo(
-            (b.rect.center.dx - x).abs(),
-          ),
-        );
+      final rowY = inBody && up ? options.last.rect.top : options.first.rect.top;
+      final row = options.where((n) => (n.rect.top - rowY).abs() < 10).toList()..sort((a, b) => (a.rect.center.dx - x).abs().compareTo((b.rect.center.dx - x).abs()));
       move(row.first);
     }
     return KeyEventResult.handled;
@@ -376,11 +300,7 @@ class _RemoteDetailListState extends State<RemoteDetailList> {
     moving = true;
     try {
       final offset = toHero ? 0.0 : scroll.offset + target.rect.top - 128;
-      await scroll.animateTo(
-        offset.clamp(0, scroll.position.maxScrollExtent),
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeOutCubic,
-      );
+      await scroll.animateTo(offset.clamp(0, scroll.position.maxScrollExtent), duration: const Duration(milliseconds: 200), curve: Curves.easeOutCubic);
       if (mounted && target.context != null) target.requestFocus();
     } finally {
       moving = false;

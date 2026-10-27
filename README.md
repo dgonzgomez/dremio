@@ -96,6 +96,12 @@ Builds need several GB of temporary space (Gradle and Xcode caches). If a build 
 
 ## What's new
 
+### 0.6.3
+
+- Fire TV: the sidebar closes when you open a page, Search, or a Lookback decade. Coming back lands on that page. Right from the rail returns to the first poster of the row you left, scrolled out from under the bar. Down on Settings and Up on the profile stay in the rail.
+- Rows: less space between them. Right moves along the row and scrolls with you; on the last poster it stays put instead of jumping to the row below.
+- Search: Down stays in search and Enter focuses the first result. Movies and series are mixed together.
+
 ### 0.6.2
 
 - Letterboxd: link your account in Settings by username (your diary must be public). Your avatar and name sit under the logo in the sidebar and open your History: what you've played in Dremio, your Letterboxd diary and your favorites.

@@ -8,6 +8,7 @@ import 'package:window_manager/window_manager.dart';
 import 'artwork_cache.dart';
 import 'catalog.dart';
 import 'letterboxd.dart';
+import 'lookback.dart';
 import 'remote_navigation.dart';
 import 'main.dart';
 import 'orbit.dart';
@@ -80,25 +81,104 @@ class _SideRailState extends State<SideRail> {
 
   /// Showing the Lookback decades instead of the main tabs.
   bool decades = false;
-  final lookbackFocus = FocusNode(debugLabel: 'Lookback'), decadeFocus = FocusNode(debugLabel: 'First decade');
+  final lookbackFocus = FocusNode(debugLabel: 'Lookback'), decadeFocus = FocusNode(debugLabel: '1940s');
+  final railScope = FocusNode(debugLabel: 'Sidebar', canRequestFocus: false, skipTraversal: true);
+  Timer? leaving;
+  final railFocus = <String, FocusNode>{};
+  FocusNode _focus(String name) => railFocus.putIfAbsent(name, () => FocusNode(debugLabel: name));
 
   @override
   void dispose() {
+    leaving?.cancel();
+    railScope.dispose();
     lookbackFocus.dispose();
     decadeFocus.dispose();
+    for (final node in railFocus.values) {
+      node.dispose();
+    }
     super.dispose();
   }
 
-  /// Swaps panels; on the remote, focus follows into the panel that slid in.
-  void _showDecades(bool show) {
-    final follow = focused;
+  /// Swaps panels. [follow] keeps remote focus in the panel that slid in; picking a decade turns it off so the page can take over.
+  void _showDecades(bool show, {bool follow = true}) {
+    final keep = follow && focused;
     setState(() => decades = show);
-    if (follow) WidgetsBinding.instance.addPostFrameCallback((_) => (show ? decadeFocus : lookbackFocus).requestFocus());
+    if (keep) WidgetsBinding.instance.addPostFrameCallback((_) => (show ? decadeFocus : lookbackFocus).requestFocus());
+  }
+
+  KeyEventResult _railKey(FocusNode scope, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) return KeyEventResult.ignored;
+    if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+      _leave();
+      return KeyEventResult.handled;
+    }
+    final up = event.logicalKey == LogicalKeyboardKey.arrowUp;
+    if (!up && event.logicalKey != LogicalKeyboardKey.arrowDown) return KeyEventResult.ignored;
+    // Follow the actual menu order, excluding scroll containers and outgoing
+    // animated panels. Geometry must never send Up/Down out into page content.
+    final nodes = <FocusNode>[
+      _focus('profile'),
+      if (decades) ...[
+        _focus('Lookback back'),
+        for (final d in Catalog.decades) d == Catalog.decades.first ? decadeFocus : _focus('${d}s'),
+      ] else ...[
+        for (final label in ['Search', 'Home', 'Orbit', 'Movies', 'Series']) _focus(label),
+        lookbackFocus,
+        _focus('My List'),
+      ],
+      _focus('Settings'),
+    ];
+    final index = nodes.indexWhere((n) => n.hasFocus);
+    if (index < 0) return KeyEventResult.handled;
+    final target = nodes[(index + (up ? -1 : 1)).clamp(0, nodes.length - 1)];
+    if (target != nodes[index]) {
+      target.requestFocus();
+      Scrollable.ensureVisible(target.context!, alignment: .5, duration: const Duration(milliseconds: 140));
+    }
+    return KeyEventResult.handled;
   }
 
   void _tab(String tab) {
     navigatorKey.currentState?.popUntil((r) => r.isFirst);
     currentPage.value = tab;
+    lastRowRestore = null;
+    _leave();
+  }
+
+  /// The rail item for the page being shown, so coming back to the rail lands on it.
+  FocusNode? _current() {
+    final page = currentPage.value;
+    if (decades) {
+      final d = page.startsWith('Lookback:') ? int.tryParse(page.substring(9)) : null;
+      return d == null ? null : (d == Catalog.decades.first ? decadeFocus : _focus('${d}s'));
+    }
+    if (page.startsWith('Lookback:')) return lookbackFocus;
+    if (page == 'History') return _focus('profile');
+    return const ['Home', 'Orbit', 'Movies', 'Series', 'My List'].contains(page) ? _focus(page) : null;
+  }
+
+  /// After a remote or keyboard picks a page, hand focus to the page so the rail slides closed.
+  void _leave() {
+    leaving?.cancel();
+    var tries = 0;
+    leaving = Timer.periodic(const Duration(milliseconds: 80), (timer) {
+      if (!mounted || !railScope.hasFocus || ++tries > 50) return timer.cancel();
+      final restore = lastRowRestore;
+      if (restore != null) {
+        timer.cancel();
+        restore();
+        return;
+      }
+      final inRail = railScope.descendants.toSet();
+      final options =
+          FocusManager.instance.rootScope.descendants
+              .where((n) => n is! FocusScopeNode && n.canRequestFocus && !n.skipTraversal && n.context != null && n.traversalDescendants.isEmpty && !inRail.contains(n))
+              .toList()
+            ..sort((a, b) => a.rect.top != b.rect.top ? a.rect.top.compareTo(b.rect.top) : a.rect.left.compareTo(b.rect.left));
+      if (options.isEmpty) return;
+      timer.cancel();
+      options.first.requestFocus();
+    });
   }
 
   @override
@@ -109,14 +189,22 @@ class _SideRailState extends State<SideRail> {
       builder: (context, page, _) {
         bool selected(String tab) => page == tab && !canPop;
         final open = hovered || focused || decades;
-        final main = Column(
+        final compact = Theme.of(context).platform == TargetPlatform.android;
+        final main = _RailList(
           key: const ValueKey('main'),
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            if (canPop) _RailItem(open: open, icon: const Icon(Icons.arrow_back_rounded), label: 'Back', onTap: goBack),
-            _RailItem(open: open, icon: const Icon(Icons.search), label: 'Search', onTap: () => openSearch(context)),
+            _RailItem(
+              focusNode: _focus('Search'),
+              open: open,
+              icon: const Icon(Icons.search),
+              label: 'Search',
+              onTap: () {
+                lastRowRestore = null;
+                openSearch(context);
+              },
+            ),
             for (final (tab, icon) in const [('Home', Icons.home_rounded), ('Orbit', Icons.public_rounded), ('Movies', Icons.movie_outlined), ('Series', Icons.tv_rounded)])
-              _RailItem(open: open, icon: Icon(icon), label: tab, selected: selected(tab), onTap: () => _tab(tab)),
+              _RailItem(focusNode: _focus(tab), open: open, icon: Icon(icon), label: tab, selected: selected(tab), onTap: () => _tab(tab)),
             _RailItem(
               open: open,
               icon: const Icon(Icons.history_rounded),
@@ -128,24 +216,23 @@ class _SideRailState extends State<SideRail> {
                 _showDecades(true);
               },
             ),
-            _RailItem(open: open, icon: const Icon(Icons.bookmark_border_rounded), label: 'My List', selected: selected('My List'), onTap: () => _tab('My List')),
+            _RailItem(focusNode: _focus('My List'), open: open, icon: const Icon(Icons.bookmark_border_rounded), label: 'My List', selected: selected('My List'), onTap: () => _tab('My List')),
           ],
         );
-        final eras = Column(
+        final eras = _RailList(
           key: const ValueKey('decades'),
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _RailItem(open: open, icon: const Icon(Icons.arrow_back_rounded), label: 'Lookback', onTap: () => _showDecades(false)),
+            _RailItem(focusNode: _focus('Lookback back'), open: open, icon: const Icon(Icons.arrow_back_rounded), label: 'Lookback', onTap: () => _showDecades(false)),
             const SizedBox(height: 8),
             for (final d in Catalog.decades)
               _RailItem(
                 open: open,
-                focusNode: d == Catalog.decades.first ? decadeFocus : null,
+                focusNode: d == Catalog.decades.first ? decadeFocus : _focus('${d}s'),
                 badge: "'${(d % 100).toString().padLeft(2, '0')}s",
                 label: '${d}s',
                 selected: selected('Lookback:$d'),
                 onTap: () {
-                  _showDecades(false);
+                  _showDecades(false, follow: false);
                   _tab('Lookback:$d');
                 },
               ),
@@ -155,9 +242,19 @@ class _SideRailState extends State<SideRail> {
           onEnter: (_) => setState(() => hovered = true),
           onExit: (_) => setState(() => hovered = false),
           child: Focus(
-            canRequestFocus: false,
-            skipTraversal: true,
-            onFocusChange: (f) => setState(() => focused = f),
+            focusNode: railScope,
+            onFocusChange: (f) {
+              setState(() => focused = f);
+              if (!f) return;
+              leaving?.cancel();
+              // Pressing Left from the page: land on the item for the page being shown.
+              if (!HardwareKeyboard.instance.isLogicalKeyPressed(LogicalKeyboardKey.arrowLeft)) return;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                final target = _current();
+                if (mounted && target != null && target.context != null && !target.hasFocus && railScope.hasFocus) target.requestFocus();
+              });
+            },
+            onKeyEvent: _railKey,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 240),
               curve: Curves.easeOutCubic,
@@ -169,25 +266,60 @@ class _SideRailState extends State<SideRail> {
               ),
               child: Column(
                 children: [
-                  SizedBox(height: Platform.isMacOS ? 44 : 20),
-                  _RailItem(
-                    open: open,
-                    icon: const Logo(size: 30),
-                    label: 'dremio',
-                    labelStyle: text(22, weight: FontWeight.w500, spacing: -1),
-                    onTap: () {
-                      setState(() => decades = false);
-                      _tab('Home');
-                    },
+                  SizedBox(
+                    height: Platform.isMacOS
+                        ? 44
+                        : compact
+                        ? 12
+                        : 20,
                   ),
-                  const SizedBox(height: 6),
+                  Semantics(
+                    key: const ValueKey('sidebar-logo'),
+                    image: true,
+                    label: 'Dremio',
+                    child: ExcludeFocus(
+                      child: IgnorePointer(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+                          child: SizedBox(
+                            height: compact ? 32 : 48,
+                            child: ClipRect(
+                              child: OverflowBox(
+                                alignment: Alignment.centerLeft,
+                                minWidth: 0,
+                                maxWidth: 188,
+                                child: Row(
+                                  children: [
+                                    SizedBox(
+                                      width: railWidth - 24,
+                                      child: Center(child: Logo(size: compact ? 26 : 30)),
+                                    ),
+                                    Expanded(
+                                      child: AnimatedOpacity(
+                                        opacity: open ? 1 : 0,
+                                        duration: const Duration(milliseconds: 180),
+                                        child: Text('dremio', maxLines: 1, style: text(22, weight: FontWeight.w500, spacing: -1)),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: compact ? 4 : 6),
                   ValueListenableBuilder<int>(
                     valueListenable: Letterboxd.instance.changes,
                     builder: (context, _, _) {
                       final me = Letterboxd.instance.me;
                       return _RailItem(
+                        navKey: 'profile',
+                        focusNode: _focus('profile'),
                         open: open,
-                        icon: me == null ? const Icon(Icons.account_circle_outlined) : Avatar(me, size: 30),
+                        icon: me == null ? const Icon(Icons.account_circle_outlined) : Avatar(me, size: compact ? 24 : 30),
                         label: me?.name ?? 'Link Letterboxd',
                         selected: selected('History'),
                         onTap: me == null ? () => openSettings(context) : () => _tab('History'),
@@ -198,6 +330,13 @@ class _SideRailState extends State<SideRail> {
                     child: ClipRect(
                       child: AnimatedSwitcher(
                         duration: const Duration(milliseconds: 320),
+                        layoutBuilder: (current, previous) => Stack(
+                          alignment: Alignment.centerLeft,
+                          children: [
+                            for (final child in previous) ExcludeFocus(child: child),
+                            ?current,
+                          ],
+                        ),
                         switchInCurve: Curves.easeOutCubic,
                         switchOutCurve: Curves.easeInCubic,
                         transitionBuilder: (child, animation) => SlideTransition(
@@ -208,8 +347,8 @@ class _SideRailState extends State<SideRail> {
                       ),
                     ),
                   ),
-                  _RailItem(open: open, icon: const Icon(Icons.settings_outlined), label: 'Settings', onTap: () => openSettings(context)),
-                  const SizedBox(height: 22),
+                  _RailItem(focusNode: _focus('Settings'), open: open, icon: const Icon(Icons.settings_outlined), label: 'Settings', onTap: () => openSettings(context)),
+                  SizedBox(height: compact ? 12 : 22),
                 ],
               ),
             ),
@@ -220,9 +359,24 @@ class _SideRailState extends State<SideRail> {
   }
 }
 
+class _RailList extends StatelessWidget {
+  const _RailList({super.key, required this.children});
+  final List<Widget> children;
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => SingleChildScrollView(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: children),
+      ),
+    ),
+  );
+}
+
 class _RailItem extends StatefulWidget {
-  const _RailItem({required this.open, this.icon, this.badge, required this.label, required this.onTap, this.selected = false, this.labelStyle, this.focusNode});
+  const _RailItem({required this.open, this.icon, this.badge, required this.label, required this.onTap, this.selected = false, this.focusNode, this.navKey});
   final FocusNode? focusNode;
+  final String? navKey;
   final bool open, selected;
   final Widget? icon;
 
@@ -230,22 +384,28 @@ class _RailItem extends StatefulWidget {
   final String? badge;
   final String label;
   final VoidCallback onTap;
-  final TextStyle? labelStyle;
   @override
   State<_RailItem> createState() => _RailItemState();
 }
 
 class _RailItemState extends State<_RailItem> {
   bool hovered = false, focused = false;
+  late final ownFocus = FocusNode(debugLabel: widget.navKey ?? widget.label);
+  @override
+  void dispose() {
+    ownFocus.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final lit = hovered || focused;
+    final compact = Theme.of(context).platform == TargetPlatform.android;
     final color = widget.selected ? green : (lit ? white : const Color(0xffb9c5ba));
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+      padding: EdgeInsets.symmetric(horizontal: 12, vertical: compact ? 2 : 3),
       child: FocusableActionDetector(
-        focusNode: widget.focusNode,
+        focusNode: widget.focusNode ?? ownFocus,
         mouseCursor: SystemMouseCursors.click,
         onShowHoverHighlight: (v) => setState(() => hovered = v),
         onShowFocusHighlight: (v) => setState(() => focused = v),
@@ -254,12 +414,29 @@ class _RailItemState extends State<_RailItem> {
           onTap: widget.onTap,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
-            height: 48,
-            decoration: BoxDecoration(color: widget.selected ? const Color(0x24bdff59) : (lit ? const Color(0x14f4f8f1) : Colors.transparent), borderRadius: BorderRadius.circular(14)),
+            height: compact ? 34 : 48,
+            decoration: BoxDecoration(color: lit ? const Color(0x24bdff59) : Colors.transparent, borderRadius: BorderRadius.circular(14)),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(14),
               child: Stack(
                 children: [
+                  // The page you're on: a slim green bar and green label. The green pill and spotlight are only for what you're pointing at.
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        width: 3,
+                        height: widget.selected ? (compact ? 16 : 22) : 0,
+                        decoration: const BoxDecoration(
+                          color: green,
+                          borderRadius: BorderRadius.horizontal(right: Radius.circular(3)),
+                        ),
+                      ),
+                    ),
+                  ),
                   Positioned.fill(
                     child: IgnorePointer(
                       child: AnimatedOpacity(
@@ -284,7 +461,7 @@ class _RailItemState extends State<_RailItem> {
                                     style: text(14, weight: FontWeight.w600, color: color),
                                   )
                                 : IconTheme(
-                                    data: IconThemeData(color: color, size: 24),
+                                    data: IconThemeData(color: color, size: compact ? 20 : 24),
                                     child: widget.icon!,
                                   ),
                           ),
@@ -298,7 +475,7 @@ class _RailItemState extends State<_RailItem> {
                               maxLines: 1,
                               overflow: TextOverflow.clip,
                               softWrap: false,
-                              style: widget.labelStyle ?? text(15, weight: FontWeight.w500, color: color),
+                              style: text(compact ? 14 : 15, weight: FontWeight.w500, color: color),
                             ),
                           ),
                         ),
@@ -423,7 +600,7 @@ class _BrowseViewState extends State<BrowseView> {
       shelves: rows.whereType<Shelf>().toList(),
       shelfExtras: rows.whereType<Shelf>().map((row) => row.continueWatching ? 20.0 : 0.0).toList(),
       heroExtent: (MediaQuery.sizeOf(context).height * .64).clamp(440.0, 720.0),
-      shelfExtent: posterWidth(context) * 1.48 + 94 + MediaQuery.textScalerOf(context).scale(20) * 1.3,
+      shelfExtent: shelfRowExtent(context),
     );
   }
 }
@@ -439,6 +616,22 @@ class LookbackView extends StatefulWidget {
 class _LookbackViewState extends State<LookbackView> {
   final catalog = Catalog.instance;
   late Future<void> loading = catalog.loadDecade(widget.decade);
+
+  @override
+  void initState() {
+    super.initState();
+    catalog.addListener(_changed);
+  }
+
+  void _changed() {
+    if (mounted && !Activity.interacted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    catalog.removeListener(_changed);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => FutureBuilder<void>(
@@ -462,7 +655,7 @@ class _LookbackViewState extends State<LookbackView> {
           ),
         );
       }
-      final heroes = Catalog.wide(all, const {}, 5);
+      final heroes = Catalog.wide(lookbackRow(all, const {}), const {}, 5);
       if (heroes.isEmpty) heroes.add(all.first);
       final lead = heroes.map((m) => str(m, 'id')).toSet();
       final counts = <String, int>{};
@@ -471,7 +664,7 @@ class _LookbackViewState extends State<LookbackView> {
           counts[g] = (counts[g] ?? 0) + 1;
         }
       }
-      final topGenres = (counts.entries.where((e) => e.value >= 8).toList()..sort((a, b) => b.value.compareTo(a.value))).take(6).map((e) => e.key);
+      final topGenres = (counts.entries.where((e) => e.value >= 8 && e.key != 'Family').toList()..sort((a, b) => b.value.compareTo(a.value))).take(6).map((e) => e.key);
       Future<void> open(Meta m) async {
         await openDetail(context, m);
         if (mounted) setState(() {});
@@ -479,9 +672,8 @@ class _LookbackViewState extends State<LookbackView> {
 
       // Each row prefers titles no earlier row has shown, topping up with repeats only when short.
       final used = <String>{...lead};
-      Shelf shelf(String title, Iterable<Meta> items) {
-        final fresh = items.where((m) => !used.contains(str(m, 'id'))).take(20).toList();
-        if (fresh.length < 10) fresh.addAll(items.where((m) => !fresh.contains(m)).take(10 - fresh.length));
+      Shelf shelf(String title, Iterable<Meta> items, {bool family = false}) {
+        final fresh = lookbackRow(items, used, family: family);
         used.addAll(fresh.map((m) => str(m, 'id')));
         return Shelf(title: title, items: fresh, filter: false, onOpen: open);
       }
@@ -494,6 +686,8 @@ class _LookbackViewState extends State<LookbackView> {
       final shelves = [
         shelf('Best of the ${d}s', all.where((m) => !lead.contains(str(m, 'id')))),
         shelf('Highest Rated', rated),
+        if (d == 2000 || d == 2010) shelf('Party Comedy', dailyPartyComedies(all, d)),
+        shelf('Family', all.where(familyMovie), family: true),
         for (final g in topGenres) shelf(g, all.where((m) => genres(m).contains(g))),
         for (var y = d; y < d + 10; y++) shelf('$y', year(y)),
       ].where((s) => s.items.isNotEmpty).toList();
@@ -502,7 +696,7 @@ class _LookbackViewState extends State<LookbackView> {
         shelves: shelves,
         shelfExtras: [for (final _ in shelves) 0.0],
         heroExtent: (MediaQuery.sizeOf(context).height * .64).clamp(440.0, 720.0),
-        shelfExtent: posterWidth(context) * 1.48 + 94 + MediaQuery.textScalerOf(context).scale(20) * 1.3,
+        shelfExtent: shelfRowExtent(context),
       );
     },
   );

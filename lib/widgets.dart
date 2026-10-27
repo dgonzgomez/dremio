@@ -7,6 +7,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import 'artwork_cache.dart';
 import 'catalog.dart';
+import 'remote_navigation.dart';
 import 'store.dart';
 import 'theme.dart';
 
@@ -482,12 +483,38 @@ class Shelf extends StatefulWidget {
 
 class _ShelfState extends State<Shelf> {
   final _scroll = ScrollController();
+  final _row = FocusNode(canRequestFocus: false, skipTraversal: true, debugLabel: 'Shelf');
   bool _hover = false;
 
   @override
+  void initState() {
+    super.initState();
+    FocusManager.instance.addListener(_onFocus);
+  }
+
+  @override
   void dispose() {
+    FocusManager.instance.removeListener(_onFocus);
+    if (identical(lastRowRestore, _restoreFirst)) lastRowRestore = null;
+    _row.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  void _onFocus() {
+    final focused = FocusManager.instance.primaryFocus;
+    if (focused == null || !focused.ancestors.contains(_row)) return;
+    lastRowRestore = _restoreFirst;
+    _reveal(focused);
+  }
+
+  Future<void> _restoreFirst() async {
+    if (!mounted || !_scroll.hasClients) return;
+    await _scroll.animateTo(0, duration: const Duration(milliseconds: 180), curve: Curves.easeOutCubic);
+    if (!mounted) return;
+    await WidgetsBinding.instance.endOfFrame;
+    final cards = _cards(_row);
+    if (cards.isNotEmpty) cards.first.requestFocus();
   }
 
   void _page(int direction) {
@@ -505,6 +532,40 @@ class _ShelfState extends State<Shelf> {
     GestureBinding.instance.pointerSignalResolver.register(e, (_) => _scroll.jumpTo(target));
   }
 
+  List<FocusNode> _cards(FocusNode row) =>
+      row.traversalDescendants.where((n) => n.context != null && n.canRequestFocus && !n.skipTraversal && n.traversalDescendants.isEmpty).toList()..sort((a, b) => a.rect.left.compareTo(b.rect.left));
+
+  /// Keeps the focused poster in the open page, not under the rail or off the right edge.
+  void _reveal(FocusNode node) {
+    if (!_scroll.hasClients || node.context == null) return;
+    final box = node.context!.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return;
+    final left = box.localToGlobal(Offset.zero).dx;
+    final right = left + box.size.width;
+    final minLeft = railWidth + 12;
+    final maxRight = MediaQuery.sizeOf(context).width - 16;
+    var delta = 0.0;
+    if (left < minLeft) delta = left - minLeft;
+    if (right - delta > maxRight) delta = right - maxRight;
+    if (delta == 0) return;
+    _scroll.animateTo((_scroll.offset + delta).clamp(0.0, _scroll.position.maxScrollExtent), duration: const Duration(milliseconds: 180), curve: Curves.easeOutCubic);
+  }
+
+  KeyEventResult _rowKey(FocusNode row, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) return KeyEventResult.ignored;
+    final right = event.logicalKey == LogicalKeyboardKey.arrowRight;
+    if (!right && event.logicalKey != LogicalKeyboardKey.arrowLeft) return KeyEventResult.ignored;
+    final cards = _cards(row);
+    final index = cards.indexWhere((n) => n.hasPrimaryFocus);
+    if (index < 0) return KeyEventResult.ignored;
+    final atStart = (!_scroll.hasClients || _scroll.offset <= 2) && index == 0;
+    final atEnd = _scroll.hasClients && _scroll.offset >= _scroll.position.maxScrollExtent - 2 && index == cards.length - 1;
+    // Only pin the ends. Anything in the middle uses normal focus so the row can scroll.
+    if (right && atEnd) return KeyEventResult.handled;
+    if (!right && atStart) return KeyEventResult.ignored;
+    return KeyEventResult.ignored;
+  }
+
   @override
   Widget build(BuildContext context) {
     final items = (widget.filter ? Catalog.instance.playable(widget.items) : widget.items).take(20).toList();
@@ -518,23 +579,27 @@ class _ShelfState extends State<Shelf> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: EdgeInsets.fromLTRB(gutter(context), 10, gutter(context), 4),
+            padding: EdgeInsets.fromLTRB(gutter(context), 2, gutter(context), 0),
             child: Text(widget.title, style: text(20, weight: FontWeight.w500)),
           ),
           SizedBox(
-            height: height + 36,
+            height: height + 12,
             child: Stack(
               children: [
                 Listener(
                   onPointerSignal: _wheel,
-                  child: ListView.separated(
-                    controller: _scroll,
-                    scrollDirection: Axis.horizontal,
-                    clipBehavior: Clip.none,
-                    padding: EdgeInsets.fromLTRB(gutter(context), 16, gutter(context), 18),
-                    itemCount: items.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 14),
-                    itemBuilder: (context, i) => PosterCard(meta: items[i], width: width, showEpisode: widget.continueWatching, onOpen: () => widget.onOpen(items[i])),
+                  child: Focus(
+                    focusNode: _row,
+                    onKeyEvent: _rowKey,
+                    child: ListView.separated(
+                      controller: _scroll,
+                      scrollDirection: Axis.horizontal,
+                      clipBehavior: Clip.none,
+                      padding: EdgeInsets.fromLTRB(gutter(context), 8, gutter(context), 8),
+                      itemCount: items.length,
+                      separatorBuilder: (_, _) => const SizedBox(width: 14),
+                      itemBuilder: (context, i) => PosterCard(meta: items[i], width: width, showEpisode: widget.continueWatching, onOpen: () => widget.onOpen(items[i])),
+                    ),
                   ),
                 ),
                 if (_hover) ...[
@@ -584,6 +649,9 @@ class _Arrow extends StatelessWidget {
 const double railWidth = 76;
 
 double gutter(BuildContext context) => railWidth + (MediaQuery.sizeOf(context).width < 900 ? 28 : 48);
+
+/// Height reserved for one shelf in the browse list. Keep in sync with [Shelf]'s layout.
+double shelfRowExtent(BuildContext context, {bool extra = false}) => posterWidth(context) * 1.48 + 62 + (extra ? 20 : 0) + MediaQuery.textScalerOf(context).scale(20) * 1.3;
 
 double posterWidth(BuildContext context) {
   final w = MediaQuery.sizeOf(context).width;

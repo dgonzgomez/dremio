@@ -113,7 +113,7 @@ class Avatar extends StatelessWidget {
 
 Shelf _shelf(BuildContext context, String title, List<Meta> items, Future<void> Function(Meta) open) => Shelf(title: title, items: items.take(20).toList(), filter: false, onOpen: open);
 
-double _shelfExtent(BuildContext context) => posterWidth(context) * 1.48 + 114 + MediaQuery.textScalerOf(context).scale(20) * 1.3;
+double _shelfExtent(BuildContext context) => shelfRowExtent(context, extra: true);
 
 /// A page header in place of a hero: big title, a line under it, and optional buttons.
 class _Header extends StatelessWidget {
