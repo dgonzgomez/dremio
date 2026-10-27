@@ -4,6 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
 
+class OpenSidebarIntent extends Intent {
+  const OpenSidebarIntent();
+}
+
 /// Scrolls the last shelf back to its first poster. Dismissing the rail calls this so we don't land on a leftover visible card.
 Future<void> Function()? lastRowRestore;
 

@@ -558,12 +558,13 @@ class _ShelfState extends State<Shelf> {
     final cards = _cards(row);
     final index = cards.indexWhere((n) => n.hasPrimaryFocus);
     if (index < 0) return KeyEventResult.ignored;
-    final atStart = (!_scroll.hasClients || _scroll.offset <= 2) && index == 0;
-    final atEnd = _scroll.hasClients && _scroll.offset >= _scroll.position.maxScrollExtent - 2 && index == cards.length - 1;
-    // Only pin the ends. Anything in the middle uses normal focus so the row can scroll.
-    if (right && atEnd) return KeyEventResult.handled;
-    if (!right && atStart) return KeyEventResult.ignored;
-    return KeyEventResult.ignored;
+    if (!right && index == 0) {
+      if (Actions.maybeFind<OpenSidebarIntent>(context) == null) return KeyEventResult.ignored;
+      Actions.invoke(context, const OpenSidebarIntent());
+    } else {
+      cards[(index + (right ? 1 : -1)).clamp(0, cards.length - 1)].requestFocus();
+    }
+    return KeyEventResult.handled;
   }
 
   @override
@@ -591,14 +592,19 @@ class _ShelfState extends State<Shelf> {
                   child: Focus(
                     focusNode: _row,
                     onKeyEvent: _rowKey,
-                    child: ListView.separated(
+                    child: SingleChildScrollView(
                       controller: _scroll,
                       scrollDirection: Axis.horizontal,
                       clipBehavior: Clip.none,
                       padding: EdgeInsets.fromLTRB(gutter(context), 8, gutter(context), 8),
-                      itemCount: items.length,
-                      separatorBuilder: (_, _) => const SizedBox(width: 14),
-                      itemBuilder: (context, i) => PosterCard(meta: items[i], width: width, showEpisode: widget.continueWatching, onOpen: () => widget.onOpen(items[i])),
+                      child: Row(
+                        children: [
+                          for (var i = 0; i < items.length; i++) ...[
+                            if (i > 0) const SizedBox(width: 14),
+                            PosterCard(meta: items[i], width: width, showEpisode: widget.continueWatching, onOpen: () => widget.onOpen(items[i])),
+                          ],
+                        ],
+                      ),
                     ),
                   ),
                 ),

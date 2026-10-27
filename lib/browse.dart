@@ -43,27 +43,43 @@ class Shell extends StatelessWidget {
 }
 
 /// Page frame: scrolling content under a fading top bar.
-class Screen extends StatelessWidget {
+class Screen extends StatefulWidget {
   const Screen({super.key, required this.child});
   final Widget child;
   @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: ink,
-    body: FocusTraversalGroup(
-      policy: ReadingOrderTraversalPolicy(),
-      child: Stack(
-        children: [
-          Positioned.fill(child: FocusScope(autofocus: true, child: child)),
-          if (Platform.isMacOS)
-            const Positioned(
-              left: railWidth,
-              right: 0,
-              top: 0,
-              height: 28,
-              child: DragToMoveArea(child: SizedBox.expand()),
-            ),
-          const Positioned(left: 0, top: 0, bottom: 0, child: SideRail()),
-        ],
+  State<Screen> createState() => _ScreenState();
+}
+
+class _ScreenState extends State<Screen> {
+  final rail = GlobalKey<_SideRailState>();
+  @override
+  Widget build(BuildContext context) => Actions(
+    actions: {
+      OpenSidebarIntent: CallbackAction<OpenSidebarIntent>(
+        onInvoke: (_) {
+          rail.currentState?._enter();
+          return null;
+        },
+      ),
+    },
+    child: Scaffold(
+      backgroundColor: ink,
+      body: FocusTraversalGroup(
+        policy: ReadingOrderTraversalPolicy(),
+        child: Stack(
+          children: [
+            Positioned.fill(child: FocusScope(autofocus: true, child: widget.child)),
+            if (Platform.isMacOS)
+              const Positioned(
+                left: railWidth,
+                right: 0,
+                top: 0,
+                height: 28,
+                child: DragToMoveArea(child: SizedBox.expand()),
+              ),
+            Positioned(left: 0, top: 0, bottom: 0, child: SideRail(key: rail)),
+          ],
+        ),
       ),
     ),
   );
@@ -106,12 +122,19 @@ class _SideRailState extends State<SideRail> {
     if (keep) WidgetsBinding.instance.addPostFrameCallback((_) => (show ? decadeFocus : lookbackFocus).requestFocus());
   }
 
+  void _enter() {
+    leaving?.cancel();
+    final target = _current() ?? _focus('Home');
+    if (target.context != null) target.requestFocus();
+  }
+
   KeyEventResult _railKey(FocusNode scope, KeyEvent event) {
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) return KeyEventResult.ignored;
     if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
       _leave();
       return KeyEventResult.handled;
     }
+    if (event.logicalKey == LogicalKeyboardKey.arrowLeft) return KeyEventResult.handled;
     final up = event.logicalKey == LogicalKeyboardKey.arrowUp;
     if (!up && event.logicalKey != LogicalKeyboardKey.arrowDown) return KeyEventResult.ignored;
     // Follow the actual menu order, excluding scroll containers and outgoing
@@ -809,7 +832,11 @@ class _HeroBannerState extends State<HeroBanner> {
             focusNode: playFocus,
             autofocus: true,
             tooltip: 'Play',
-            onKey: (e) => _edge(e, LogicalKeyboardKey.arrowLeft, -1),
+            onKey: (e) {
+              if (e.logicalKey != LogicalKeyboardKey.arrowLeft) return KeyEventResult.ignored;
+              if (e is KeyDownEvent || e is KeyRepeatEvent) Actions.maybeInvoke(context, const OpenSidebarIntent());
+              return KeyEventResult.handled;
+            },
             onTap: () => str(m, 'type') == 'series' ? openDetail(context, m) : play(context, m, str(m, 'id')),
           ),
           const SizedBox(width: 14),
