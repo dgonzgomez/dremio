@@ -53,7 +53,7 @@ class Screen extends StatelessWidget {
       policy: ReadingOrderTraversalPolicy(),
       child: Stack(
         children: [
-          Positioned.fill(child: child),
+          Positioned.fill(child: FocusScope(autofocus: true, child: child)),
           if (Platform.isMacOS)
             const Positioned(
               left: railWidth,

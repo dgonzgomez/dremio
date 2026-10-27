@@ -38,16 +38,7 @@ Future<void> main() async {
     final fit = await _fitScreen();
     maximize = fit.maximize;
     await windowManager.waitUntilReadyToShow(
-      WindowOptions(
-        title: 'Dremio',
-        size: fit.size,
-        minimumSize: fit.minimum,
-        center: true,
-        backgroundColor: ink,
-        titleBarStyle: Platform.isMacOS
-            ? TitleBarStyle.hidden
-            : TitleBarStyle.normal,
-      ),
+      WindowOptions(title: 'Dremio', size: fit.size, minimumSize: fit.minimum, center: true, backgroundColor: ink, titleBarStyle: Platform.isMacOS ? TitleBarStyle.hidden : TitleBarStyle.normal),
       () {},
     );
   }
@@ -58,9 +49,7 @@ Future<void> main() async {
   }();
   if (!desktop) {
     const mark = SvgAssetLoader('assets/dremio-mark.svg');
-    await svg.cache
-        .putIfAbsent(mark.cacheKey(null), () => mark.loadBytes(null))
-        .catchError((_) => ByteData(0));
+    await svg.cache.putIfAbsent(mark.cacheKey(null), () => mark.loadBytes(null)).catchError((_) => ByteData(0));
     runApp(Boot(ready: boot));
     await boot;
     Catalog.instance.refresh();
@@ -71,10 +60,7 @@ Future<void> main() async {
   Timer(const Duration(seconds: 15), Catalog.instance.warmLookback);
   if (desktop) {
     // A hidden window may never get a vsync, so don't wait on the first frame forever.
-    await Future.any([
-      WidgetsBinding.instance.waitUntilFirstFrameRasterized,
-      Future<void>.delayed(const Duration(milliseconds: 800)),
-    ]);
+    await Future.any([WidgetsBinding.instance.waitUntilFirstFrameRasterized, Future<void>.delayed(const Duration(milliseconds: 800))]);
     if (maximize) await windowManager.maximize();
     await windowManager.show();
     await windowManager.focus();
@@ -90,30 +76,18 @@ Future<({Size size, Size minimum, bool maximize})> _fitScreen() async {
     final display = await screenRetriever.getPrimaryDisplay();
     area = display.visibleSize ?? display.size;
   } catch (_) {
-    final display =
-        WidgetsBinding.instance.platformDispatcher.views.first.display;
+    final display = WidgetsBinding.instance.platformDispatcher.views.first.display;
     area = display.size / display.devicePixelRatio;
   }
   if (area.isEmpty) {
-    return (
-      size: const Size(1440, 900),
-      minimum: const Size(960, 620),
-      maximize: false,
-    );
+    return (size: const Size(1440, 900), minimum: const Size(960, 620), maximize: false);
   }
   final room = Size(area.width * .92, area.height * .88);
   final minimum = Size(math.min(960, room.width), math.min(620, room.height));
   if (room.width < 1440 || room.height < 900) {
     return (size: room, minimum: minimum, maximize: true);
   }
-  return (
-    size: Size(
-      math.max(1440, area.width * .75),
-      math.max(900, area.height * .75),
-    ),
-    minimum: minimum,
-    maximize: false,
-  );
+  return (size: Size(math.max(1440, area.width * .75), math.max(900, area.height * .75)), minimum: minimum, maximize: false);
 }
 
 /// Remembers when the user last touched anything, so background refreshes and hero rotation stay out of the way.
@@ -125,8 +99,7 @@ class Activity {
     interacted = true;
   }
 
-  static bool idleFor(int ms) =>
-      DateTime.now().millisecondsSinceEpoch - lastInput > ms;
+  static bool idleFor(int ms) => DateTime.now().millisecondsSinceEpoch - lastInput > ms;
 }
 
 /// Keeps the launch logo hovering until the catalogs are ready, then fades into the app.
@@ -177,9 +150,7 @@ class _DremioAppState extends State<DremioApp> {
 
   /// Runs before the focused widget sees the key, so Alt+Enter never also presses the focused button.
   KeyEventResult _fullScreenKey(KeyEvent event) {
-    final enter =
-        event.logicalKey == LogicalKeyboardKey.enter ||
-        event.logicalKey == LogicalKeyboardKey.numpadEnter;
+    final enter = event.logicalKey == LogicalKeyboardKey.enter || event.logicalKey == LogicalKeyboardKey.numpadEnter;
     if (!enter) return KeyEventResult.ignored;
     if (event is KeyDownEvent && HardwareKeyboard.instance.isAltPressed) {
       _swallowEnter = true;
@@ -239,14 +210,10 @@ class _DremioAppState extends State<DremioApp> {
           ...WidgetsApp.defaultShortcuts,
           // Android turns the remote's Back into a route pop on key-up, so a key-down shortcut there would pop twice.
           if (desktop) ...{
-            const SingleActivator(LogicalKeyboardKey.escape):
-                const _BackIntent(),
-            const SingleActivator(LogicalKeyboardKey.goBack):
-                const _BackIntent(),
-            const SingleActivator(LogicalKeyboardKey.browserBack):
-                const _BackIntent(),
-            const SingleActivator(LogicalKeyboardKey.bracketLeft, meta: true):
-                const _BackIntent(),
+            const SingleActivator(LogicalKeyboardKey.escape): const _BackIntent(),
+            const SingleActivator(LogicalKeyboardKey.goBack): const _BackIntent(),
+            const SingleActivator(LogicalKeyboardKey.browserBack): const _BackIntent(),
+            const SingleActivator(LogicalKeyboardKey.bracketLeft, meta: true): const _BackIntent(),
           },
         },
         actions: {
@@ -277,9 +244,9 @@ void goBack() {
 }
 
 Route<T> fade<T>(Widget page) => PageRouteBuilder<T>(
+  opaque: true,
   pageBuilder: (_, _, _) => page,
   transitionDuration: const Duration(milliseconds: 220),
   reverseTransitionDuration: const Duration(milliseconds: 180),
-  transitionsBuilder: (_, animation, _, child) =>
-      FadeTransition(opacity: animation, child: child),
+  transitionsBuilder: (_, animation, _, child) => FadeTransition(opacity: animation, child: child),
 );

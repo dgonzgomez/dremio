@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'browse.dart';
 import 'letterboxd.dart';
@@ -24,6 +25,7 @@ class _SettingsPageState extends State<SettingsPage> {
   String feedback = '', version = '', updateStatus = '';
   Release? available;
   double? progress;
+  final firstFocus = FocusNode();
 
   final lb = Letterboxd.instance;
   final lbName = TextEditingController();
@@ -177,6 +179,10 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   void initState() {
     super.initState();
+    FocusManager.instance.addListener(_reveal);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) firstFocus.requestFocus();
+    });
     if (!store.hasSource) editing = sources.first.id;
     currentVersion().then((v) {
       if (mounted) setState(() => version = v);
@@ -249,9 +255,43 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   void dispose() {
+    FocusManager.instance.removeListener(_reveal);
+    firstFocus.dispose();
     link.dispose();
     lbName.dispose();
     super.dispose();
+  }
+
+  void _reveal() {
+    final n = FocusManager.instance.primaryFocus;
+    if (!mounted || n?.context == null) return;
+    if (n!.context!.findAncestorStateOfType<_SettingsPageState>() != this) return;
+    Scrollable.ensureVisible(n.context!, alignment: .35, duration: const Duration(milliseconds: 180), curve: Curves.easeOutCubic);
+  }
+
+  List<FocusNode> _controls() {
+    final items =
+        FocusManager.instance.primaryFocus?.nearestScope?.traversalDescendants.where((n) => n.canRequestFocus && !n.skipTraversal && n.context != null && n.traversalDescendants.isEmpty).toList() ??
+        [];
+    items.sort((a, b) => a.rect.top != b.rect.top ? a.rect.top.compareTo(b.rect.top) : a.rect.left.compareTo(b.rect.left));
+    return items;
+  }
+
+  KeyEventResult _keys(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) return KeyEventResult.ignored;
+    final up = event.logicalKey == LogicalKeyboardKey.arrowUp;
+    final down = event.logicalKey == LogicalKeyboardKey.arrowDown;
+    if (!up && !down) return KeyEventResult.ignored;
+    final items = _controls();
+    if (items.isEmpty) return KeyEventResult.handled;
+    final i = items.indexWhere((n) => n.hasPrimaryFocus);
+    if (i < 0) {
+      items.first.requestFocus();
+      return KeyEventResult.handled;
+    }
+    if (up && i == 0) return KeyEventResult.handled;
+    if (down && i == items.length - 1) return KeyEventResult.handled;
+    return KeyEventResult.ignored;
   }
 
   void edit(String? id) => setState(() {
@@ -357,9 +397,16 @@ class _SettingsPageState extends State<SettingsPage> {
         Row(
           children: [
             if (!connected)
-              Pill(label: 'Connect', height: 42, onTap: () => edit(source.id))
+              Pill(label: 'Connect', height: 42, autofocus: source.id == sources.first.id, focusNode: source.id == sources.first.id ? firstFocus : null, onTap: () => edit(source.id))
             else ...[
-              Pill(label: isDefault ? 'Default' : 'Make default', primary: isDefault, height: 42, onTap: () => setState(() => store.defaultSource = source.id)),
+              Pill(
+                label: isDefault ? 'Default' : 'Make default',
+                primary: isDefault,
+                height: 42,
+                autofocus: source.id == sources.first.id,
+                focusNode: source.id == sources.first.id ? firstFocus : null,
+                onTap: () => setState(() => store.defaultSource = source.id),
+              ),
               const SizedBox(width: 12),
               Pill(label: 'Replace', height: 42, onTap: () => edit(source.id)),
               const SizedBox(width: 12),
@@ -382,98 +429,103 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     return Screen(
-      child: SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(gutter(context), 110, gutter(context), 60),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('Settings', style: text(34, weight: FontWeight.w500)),
-            const SizedBox(height: 26),
-            Text('Sources', style: text(13, color: muted)),
-            for (final source in sources) ..._source(source),
-            ..._letterboxd(),
-            const SizedBox(height: 34),
-            Text('Resolution', style: text(13, color: muted)),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                for (final q in ['4K', '1080p', '720p', '480p']) ...[
-                  Pill(label: q, primary: store.resolution == q, height: 42, onTap: () => setState(() => store.resolution = q)),
-                  const SizedBox(width: 12),
+      child: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        onKeyEvent: _keys,
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(gutter(context), 110, gutter(context), 60),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Settings', style: text(34, weight: FontWeight.w500)),
+              const SizedBox(height: 26),
+              Text('Sources', style: text(13, color: muted)),
+              for (final source in sources) ..._source(source),
+              ..._letterboxd(),
+              const SizedBox(height: 34),
+              Text('Resolution', style: text(13, color: muted)),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  for (final q in ['4K', '1080p', '720p', '480p']) ...[
+                    Pill(label: q, primary: store.resolution == q, height: 42, onTap: () => setState(() => store.resolution = q)),
+                    const SizedBox(width: 12),
+                  ],
                 ],
-              ],
-            ),
-            const SizedBox(height: 34),
-            Text('HDR', style: text(13, color: muted)),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Pill(label: 'On', primary: store.hdr, height: 42, onTap: () => setState(() => store.hdr = true)),
-                const SizedBox(width: 12),
-                Pill(label: 'Off', primary: !store.hdr, height: 42, onTap: () => setState(() => store.hdr = false)),
-                const SizedBox(width: 16),
-                Flexible(
-                  child: Text(store.hdr ? 'HDR sources are allowed.' : 'HDR sources are skipped.', style: text(13, color: muted)),
-                ),
-              ],
-            ),
-            const SizedBox(height: 34),
-            Text('Data Saver', style: text(13, color: muted)),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Pill(label: 'On', primary: store.dataSaver, height: 42, onTap: () => setState(() => store.dataSaver = true)),
-                const SizedBox(width: 12),
-                Pill(label: 'Off', primary: !store.dataSaver, height: 42, onTap: () => setState(() => store.dataSaver = false)),
-                const SizedBox(width: 16),
-                Flexible(
-                  child: Text(
-                    store.dataSaver ? 'Prefers files under ${dataSaverGb.toInt()} GB, so playback starts faster.' : 'Picks the best match regardless of file size.',
-                    style: text(13, color: muted),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 34),
-            Text(version.isEmpty ? 'Updates' : 'Updates  ·  version $version', style: text(13, color: muted)),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                if (available case final release?)
-                  Pill(label: 'Update to ${release.version}', primary: true, onTap: updating ? () {} : () => applyUpdate(release))
-                else
-                  Pill(label: 'Check for updates', onTap: updating ? () {} : checkForUpdate),
-                if (updateStatus.isNotEmpty) ...[
+              ),
+              const SizedBox(height: 34),
+              Text('HDR', style: text(13, color: muted)),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Pill(label: 'On', primary: store.hdr, height: 42, onTap: () => setState(() => store.hdr = true)),
+                  const SizedBox(width: 12),
+                  Pill(label: 'Off', primary: !store.hdr, height: 42, onTap: () => setState(() => store.hdr = false)),
                   const SizedBox(width: 16),
                   Flexible(
-                    child: Text(updateStatus, style: text(13, color: muted)),
+                    child: Text(store.hdr ? 'HDR sources are allowed.' : 'HDR sources are skipped.', style: text(13, color: muted)),
                   ),
                 ],
-              ],
-            ),
-            if (progress != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 14),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 360),
-                  child: LinearProgressIndicator(value: progress, minHeight: 4, color: green, backgroundColor: const Color(0x40f4f8f1), borderRadius: BorderRadius.circular(2)),
+              ),
+              const SizedBox(height: 34),
+              Text('Data Saver', style: text(13, color: muted)),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Pill(label: 'On', primary: store.dataSaver, height: 42, onTap: () => setState(() => store.dataSaver = true)),
+                  const SizedBox(width: 12),
+                  Pill(label: 'Off', primary: !store.dataSaver, height: 42, onTap: () => setState(() => store.dataSaver = false)),
+                  const SizedBox(width: 16),
+                  Flexible(
+                    child: Text(
+                      store.dataSaver ? 'Prefers files under ${dataSaverGb.toInt()} GB, so playback starts faster.' : 'Picks the best match regardless of file size.',
+                      style: text(13, color: muted),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 34),
+              Text(version.isEmpty ? 'Updates' : 'Updates  ·  version $version', style: text(13, color: muted)),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  if (available case final release?)
+                    Pill(label: 'Update to ${release.version}', primary: true, onTap: updating ? () {} : () => applyUpdate(release))
+                  else
+                    Pill(label: 'Check for updates', onTap: updating ? () {} : checkForUpdate),
+                  if (updateStatus.isNotEmpty) ...[
+                    const SizedBox(width: 16),
+                    Flexible(
+                      child: Text(updateStatus, style: text(13, color: muted)),
+                    ),
+                  ],
+                ],
+              ),
+              if (progress != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 14),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 360),
+                    child: LinearProgressIndicator(value: progress, minHeight: 4, color: green, backgroundColor: const Color(0x40f4f8f1), borderRadius: BorderRadius.circular(2)),
+                  ),
+                ),
+              const SizedBox(height: 34),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Pill(
+                  label: 'Reset my list',
+                  onTap: () async {
+                    if (await confirm('Reset your list and preferences?', 'Reset')) {
+                      await store.reset();
+                      currentPage.value = 'Home';
+                      navigatorKey.currentState?.popUntil((r) => r.isFirst);
+                    }
+                  },
                 ),
               ),
-            const SizedBox(height: 34),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Pill(
-                label: 'Reset my list',
-                onTap: () async {
-                  if (await confirm('Reset your list and preferences?', 'Reset')) {
-                    await store.reset();
-                    currentPage.value = 'Home';
-                    navigatorKey.currentState?.popUntil((r) => r.isFirst);
-                  }
-                },
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
